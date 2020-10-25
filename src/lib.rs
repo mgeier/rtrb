@@ -31,19 +31,19 @@ pub use error::{PopError, PushError};
 struct Inner<T> {
     /// The head of the queue.
     ///
-    /// This integer is in range `0 .. 2 * cap`.
+    /// This integer is in range `0 .. 2 * capacity`.
     head: CachePadded<AtomicUsize>,
 
     /// The tail of the queue.
     ///
-    /// This integer is in range `0 .. 2 * cap`.
+    /// This integer is in range `0 .. 2 * capacity`.
     tail: CachePadded<AtomicUsize>,
 
     /// The buffer holding slots.
     buffer: *mut T,
 
     /// The queue capacity.
-    cap: usize,
+    capacity: usize,
 
     /// Indicates that dropping a `Buffer<T>` may drop elements of type `T`.
     _marker: PhantomData<T>,
@@ -52,22 +52,22 @@ struct Inner<T> {
 impl<T> Inner<T> {
     /// Returns a pointer to the slot at position `pos`.
     ///
-    /// The position must be in range `0 .. 2 * cap`.
+    /// The position must be in range `0 .. 2 * capacity`.
     #[inline]
     unsafe fn slot(&self, pos: usize) -> *mut T {
-        if pos < self.cap {
+        if pos < self.capacity {
             self.buffer.add(pos)
         } else {
-            self.buffer.add(pos - self.cap)
+            self.buffer.add(pos - self.capacity)
         }
     }
 
     /// Increments a position by going one slot forward.
     ///
-    /// The position must be in range `0 .. 2 * cap`.
+    /// The position must be in range `0 .. 2 * capacity`.
     #[inline]
     fn increment(&self, pos: usize) -> usize {
-        if pos < 2 * self.cap - 1 {
+        if pos < 2 * self.capacity - 1 {
             pos + 1
         } else {
             0
@@ -76,13 +76,13 @@ impl<T> Inner<T> {
 
     /// Returns the distance between two positions.
     ///
-    /// Positions must be in range `0 .. 2 * cap`.
+    /// Positions must be in range `0 .. 2 * capacity`.
     #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         if a <= b {
             b - a
         } else {
-            2 * self.cap - a + b
+            2 * self.capacity - a + b
         }
     }
 }
@@ -102,7 +102,7 @@ impl<T> Drop for Inner<T> {
 
         // Finally, deallocate the buffer, but don't run any destructors.
         unsafe {
-            Vec::from_raw_parts(self.buffer, 0, self.cap);
+            Vec::from_raw_parts(self.buffer, 0, self.capacity);
         }
     }
 }
@@ -120,12 +120,12 @@ impl<T> Drop for Inner<T> {
 /// ```
 /// let (p, c) = rtrb::new::<i32>(100);
 /// ```
-pub fn new<T>(cap: usize) -> (Producer<T>, Consumer<T>) {
-    assert!(cap > 0, "capacity must be non-zero");
+pub fn new<T>(capacity: usize) -> (Producer<T>, Consumer<T>) {
+    assert!(capacity > 0, "capacity must be non-zero");
 
-    // Allocate a buffer of length `cap`.
+    // Allocate a buffer of length `capacity`.
     let buffer = {
-        let mut v = Vec::<T>::with_capacity(cap);
+        let mut v = Vec::<T>::with_capacity(capacity);
         let ptr = v.as_mut_ptr();
         mem::forget(v);
         ptr
@@ -135,7 +135,7 @@ pub fn new<T>(cap: usize) -> (Producer<T>, Consumer<T>) {
         head: CachePadded::new(AtomicUsize::new(0)),
         tail: CachePadded::new(AtomicUsize::new(0)),
         buffer,
-        cap,
+        capacity,
         _marker: PhantomData,
     });
 
@@ -203,13 +203,13 @@ impl<T> Producer<T> {
         let mut tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
-        if self.inner.distance(head, tail) == self.inner.cap {
+        if self.inner.distance(head, tail) == self.inner.capacity {
             // We need to refresh the head and check again if the queue is *really* full.
             head = self.inner.head.load(Ordering::Acquire);
             self.head.set(head);
 
             // Is the queue *really* full?
-            if self.inner.distance(head, tail) == self.inner.cap {
+            if self.inner.distance(head, tail) == self.inner.capacity {
                 return Err(PushError::Full(value));
             }
         }
@@ -237,7 +237,7 @@ impl<T> Producer<T> {
     /// assert_eq!(p.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
-        self.inner.cap
+        self.inner.capacity
     }
 }
 
@@ -330,7 +330,7 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
-        self.inner.cap
+        self.inner.capacity
     }
 }
 
