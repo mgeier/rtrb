@@ -3,9 +3,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_utils::thread::scope;
 use rand::{thread_rng, Rng};
 
+use rtrb::RingBuffer;
+
 #[test]
 fn smoke() {
-    let (p, c) = rtrb::new(1);
+    let (p, c) = RingBuffer::new(1).split();
 
     p.push(7).unwrap();
     assert_eq!(c.pop(), Ok(7));
@@ -18,7 +20,7 @@ fn smoke() {
 #[test]
 fn capacity() {
     for i in 1..10 {
-        let (p, c) = rtrb::new::<i32>(i);
+        let (p, c) = RingBuffer::<i32>::new(i).split();
         assert_eq!(p.capacity(), i);
         assert_eq!(c.capacity(), i);
     }
@@ -27,14 +29,14 @@ fn capacity() {
 #[test]
 #[should_panic(expected = "capacity must be non-zero")]
 fn zero_capacity() {
-    let _ = rtrb::new::<i32>(0);
+    let _ = RingBuffer::<i32>::new(0);
 }
 
 #[test]
 fn parallel() {
     const COUNT: usize = 100_000;
 
-    let (p, c) = rtrb::new(3);
+    let (p, c) = RingBuffer::new(3).split();
 
     scope(|s| {
         s.spawn(move |_| {
@@ -80,7 +82,7 @@ fn drops() {
         let additional = rng.gen_range(0, 50);
 
         DROPS.store(0, Ordering::SeqCst);
-        let (p, c) = rtrb::new(50);
+        let (p, c) = RingBuffer::new(50).split();
 
         let p = scope(|s| {
             s.spawn(move |_| {

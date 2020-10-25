@@ -3,7 +3,9 @@
 //! # Examples
 //!
 //! ```
-//! let (p, c) = rtrb::new(2);
+//! use rtrb::RingBuffer;
+//!
+//! let (p, c) = RingBuffer::new(2).split();
 //!
 //! assert!(p.push(1).is_ok());
 //! assert!(p.push(2).is_ok());
@@ -27,8 +29,8 @@ mod error;
 
 pub use error::{PopError, PushError};
 
-/// The inner representation of a single-producer single-consumer queue.
-struct Inner<T> {
+/// A single-producer single-consumer queue.
+pub struct RingBuffer<T> {
     /// The head of the queue.
     ///
     /// This integer is in range `0 .. 2 * capacity`.
@@ -49,7 +51,73 @@ struct Inner<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Inner<T> {
+impl<T> RingBuffer<T> {
+    /// Creates a [RingBuffer] with the given capacity.
+    ///
+    /// The returned [RingBuffer] is typically immediately split into
+    /// the producer and the consumer side by [split()].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the capacity is zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<i32>::new(100);
+    /// assert_eq!(rb.capacity(), 100);
+    /// ```
+    pub fn new(capacity: usize) -> RingBuffer<T> {
+        assert!(capacity > 0, "capacity must be non-zero");
+
+        // Allocate a buffer of length `capacity`.
+        let buffer = {
+            let mut v = Vec::<T>::with_capacity(capacity);
+            let ptr = v.as_mut_ptr();
+            mem::forget(v);
+            ptr
+        };
+        RingBuffer {
+            head: CachePadded::new(AtomicUsize::new(0)),
+            tail: CachePadded::new(AtomicUsize::new(0)),
+            buffer,
+            capacity,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn split(self) -> (Producer<T>, Consumer<T>) {
+        let rb = Arc::new(self);
+        let p = Producer {
+            rb: rb.clone(),
+            head: Cell::new(0),
+            tail: Cell::new(0),
+        };
+        let c = Consumer {
+            rb,
+            head: Cell::new(0),
+            tail: Cell::new(0),
+        };
+        (p, c)
+    }
+
+    /// Returns the capacity of the queue.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let rb = RingBuffer::<i32>::new(100);
+    ///
+    /// assert_eq!(rb.capacity(), 100);
+    /// ```
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
@@ -87,7 +155,7 @@ impl<T> Inner<T> {
     }
 }
 
-impl<T> Drop for Inner<T> {
+impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         let mut head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
@@ -107,77 +175,30 @@ impl<T> Drop for Inner<T> {
     }
 }
 
-/// Creates a bounded single-producer single-consumer queue with the given capacity.
-///
-/// Returns the producer and the consumer side for the queue.
-///
-/// # Panics
-///
-/// Panics if the capacity is zero.
-///
-/// # Examples
-///
-/// ```
-/// let (p, c) = rtrb::new::<i32>(100);
-/// ```
-pub fn new<T>(capacity: usize) -> (Producer<T>, Consumer<T>) {
-    assert!(capacity > 0, "capacity must be non-zero");
-
-    // Allocate a buffer of length `capacity`.
-    let buffer = {
-        let mut v = Vec::<T>::with_capacity(capacity);
-        let ptr = v.as_mut_ptr();
-        mem::forget(v);
-        ptr
-    };
-
-    let inner = Arc::new(Inner {
-        head: CachePadded::new(AtomicUsize::new(0)),
-        tail: CachePadded::new(AtomicUsize::new(0)),
-        buffer,
-        capacity,
-        _marker: PhantomData,
-    });
-
-    let p = Producer {
-        inner: inner.clone(),
-        head: Cell::new(0),
-        tail: Cell::new(0),
-    };
-
-    let c = Consumer {
-        inner,
-        head: Cell::new(0),
-        tail: Cell::new(0),
-    };
-
-    (p, c)
-}
-
 /// The producer side of a bounded single-producer single-consumer queue.
 ///
 /// # Examples
 ///
 /// ```
-/// use rtrb::PushError;
+/// use rtrb::{PushError, RingBuffer};
 ///
-/// let (p, c) = rtrb::new::<i32>(1);
+/// let (p, c) = RingBuffer::<i32>::new(1).split();
 ///
 /// assert_eq!(p.push(10), Ok(()));
 /// assert_eq!(p.push(20), Err(PushError::Full(20)));
 /// ```
 pub struct Producer<T> {
     /// The inner representation of the queue.
-    inner: Arc<Inner<T>>,
+    rb: Arc<RingBuffer<T>>,
 
-    /// A copy of `inner.head` for quick access.
+    /// A copy of `rb.head` for quick access.
     ///
-    /// This value can be stale and sometimes needs to be resynchronized with `inner.head`.
+    /// This value can be stale and sometimes needs to be resynchronized with `rb.head`.
     head: Cell<usize>,
 
-    /// A copy of `inner.tail` for quick access.
+    /// A copy of `rb.tail` for quick access.
     ///
-    /// This value is always in sync with `inner.tail`.
+    /// This value is always in sync with `rb.tail`.
     tail: Cell<usize>,
 }
 
@@ -191,9 +212,9 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::PushError;
+    /// use rtrb::{RingBuffer, PushError};
     ///
-    /// let (p, c) = rtrb::new(1);
+    /// let (p, c) = RingBuffer::new(1).split();
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
@@ -203,25 +224,25 @@ impl<T> Producer<T> {
         let mut tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
-        if self.inner.distance(head, tail) == self.inner.capacity {
+        if self.rb.distance(head, tail) == self.rb.capacity {
             // We need to refresh the head and check again if the queue is *really* full.
-            head = self.inner.head.load(Ordering::Acquire);
+            head = self.rb.head.load(Ordering::Acquire);
             self.head.set(head);
 
             // Is the queue *really* full?
-            if self.inner.distance(head, tail) == self.inner.capacity {
+            if self.rb.distance(head, tail) == self.rb.capacity {
                 return Err(PushError::Full(value));
             }
         }
 
         // Write the value into the tail slot.
         unsafe {
-            self.inner.slot(tail).write(value);
+            self.rb.slot(tail).write(value);
         }
 
         // Move the tail one slot forward.
-        tail = self.inner.increment(tail);
-        self.inner.tail.store(tail, Ordering::Release);
+        tail = self.rb.increment(tail);
+        self.rb.tail.store(tail, Ordering::Release);
         self.tail.set(tail);
 
         Ok(())
@@ -232,12 +253,14 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// ```
-    /// let (p, c) = rtrb::new::<i32>(100);
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<i32>::new(100).split();
     ///
     /// assert_eq!(p.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
-        self.inner.capacity
+        self.rb.capacity
     }
 }
 
@@ -252,9 +275,9 @@ impl<T> fmt::Debug for Producer<T> {
 /// # Examples
 ///
 /// ```
-/// use rtrb::PopError;
+/// use rtrb::{RingBuffer, PopError};
 ///
-/// let (p, c) = rtrb::new(1);
+/// let (p, c) = RingBuffer::new(1).split();
 /// assert_eq!(p.push(10), Ok(()));
 ///
 /// assert_eq!(c.pop(), Ok(10));
@@ -262,16 +285,16 @@ impl<T> fmt::Debug for Producer<T> {
 /// ```
 pub struct Consumer<T> {
     /// The inner representation of the queue.
-    inner: Arc<Inner<T>>,
+    rb: Arc<RingBuffer<T>>,
 
-    /// A copy of `inner.head` for quick access.
+    /// A copy of `rb.head` for quick access.
     ///
-    /// This value is always in sync with `inner.head`.
+    /// This value is always in sync with `rb.head`.
     head: Cell<usize>,
 
-    /// A copy of `inner.tail` for quick access.
+    /// A copy of `rb.tail` for quick access.
     ///
-    /// This value can be stale and sometimes needs to be resynchronized with `inner.tail`.
+    /// This value can be stale and sometimes needs to be resynchronized with `rb.tail`.
     tail: Cell<usize>,
 }
 
@@ -285,9 +308,9 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// ```
-    /// use rtrb::PopError;
+    /// use rtrb::{PopError, RingBuffer};
     ///
-    /// let (p, c) = rtrb::new(1);
+    /// let (p, c) = RingBuffer::new(1).split();
     /// assert_eq!(p.push(10), Ok(()));
     ///
     /// assert_eq!(c.pop(), Ok(10));
@@ -300,7 +323,7 @@ impl<T> Consumer<T> {
         // Check if the queue is *possibly* empty.
         if head == tail {
             // We need to refresh the tail and check again if the queue is *really* empty.
-            tail = self.inner.tail.load(Ordering::Acquire);
+            tail = self.rb.tail.load(Ordering::Acquire);
             self.tail.set(tail);
 
             // Is the queue *really* empty?
@@ -310,11 +333,11 @@ impl<T> Consumer<T> {
         }
 
         // Read the value from the head slot.
-        let value = unsafe { self.inner.slot(head).read() };
+        let value = unsafe { self.rb.slot(head).read() };
 
         // Move the head one slot forward.
-        head = self.inner.increment(head);
-        self.inner.head.store(head, Ordering::Release);
+        head = self.rb.increment(head);
+        self.rb.head.store(head, Ordering::Release);
         self.head.set(head);
 
         Ok(value)
@@ -325,12 +348,14 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// ```
-    /// let (p, c) = rtrb::new::<i32>(100);
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<i32>::new(100).split();
     ///
     /// assert_eq!(c.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
-        self.inner.capacity
+        self.rb.capacity
     }
 }
 
