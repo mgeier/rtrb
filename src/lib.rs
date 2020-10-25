@@ -1,4 +1,17 @@
-//! A bounded single-producer single-consumer queue.
+//! A realtime-safe single-producer single-consumer ring buffer.
+//!
+//! Reading from and writing into the ring buffer is lock-free and wait-free.
+//! All reading and writing functions return immediately.
+//! Only a single thread can write into the ring buffer and a single thread
+//! (typically a different one) can read from the ring buffer.
+//! If the queue is empty, there is no way for the reading thread to wait
+//! for new data, other than trying repeatedly until reading succeeds.
+//! Similarly, if the queue is full, there is no way for the writing thread
+//! to wait for newly available space to write to, other than trying repeatedly.
+//!
+//! A [`RingBuffer`] consists of two parts:
+//! a [`Producer`] for writing into the ring buffer and
+//! a [`Consumer`] for reading from the ring buffer.
 //!
 //! # Examples
 //!
@@ -16,6 +29,9 @@
 //! assert!(c.pop().is_err());
 //! ```
 
+#![warn(rust_2018_idioms)]
+#![deny(missing_docs)]
+
 use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -29,7 +45,7 @@ mod error;
 
 pub use error::{PopError, PushError};
 
-/// A single-producer single-consumer queue.
+/// A bounded single-producer single-consumer queue.
 pub struct RingBuffer<T> {
     /// The head of the queue.
     ///
@@ -52,10 +68,10 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    /// Creates a [RingBuffer] with the given capacity.
+    /// Creates a [`RingBuffer`] with the given capacity.
     ///
-    /// The returned [RingBuffer] is typically immediately split into
-    /// the producer and the consumer side by [split()].
+    /// The returned [`RingBuffer`] is typically immediately split into
+    /// the producer and the consumer side by [`RingBuffer::split()`].
     ///
     /// # Panics
     ///
@@ -66,8 +82,15 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let rb = RingBuffer::<i32>::new(100);
-    /// assert_eq!(rb.capacity(), 100);
+    /// let rb = RingBuffer::<f32>::new(100);
+    /// ```
+    /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
+    /// is is only necessary if it cannot be deduced by the compiler.
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::new(100).split();
+    /// assert!(p.push(0.0f32).is_ok());
     /// ```
     pub fn new(capacity: usize) -> RingBuffer<T> {
         assert!(capacity > 0, "capacity must be non-zero");
@@ -88,6 +111,15 @@ impl<T> RingBuffer<T> {
         }
     }
 
+    /// Splits the [`RingBuffer`] into [`Producer`] and [`Consumer`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(100).split();
+    /// ```
     pub fn split(self) -> (Producer<T>, Consumer<T>) {
         let rb = Arc::new(self);
         let p = Producer {
@@ -110,8 +142,7 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let rb = RingBuffer::<i32>::new(100);
-    ///
+    /// let rb = RingBuffer::<f32>::new(100);
     /// assert_eq!(rb.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
@@ -175,17 +206,20 @@ impl<T> Drop for RingBuffer<T> {
     }
 }
 
-/// The producer side of a bounded single-producer single-consumer queue.
+/// The producer side of a [`RingBuffer`].
+///
+/// Can be moved between threads,
+/// but references from different threads are not allowed
+/// (i.e. it is [`Send`] but not [`Sync`]).
+///
+/// Can only be created with [`RingBuffer::split()`].
 ///
 /// # Examples
 ///
 /// ```
-/// use rtrb::{PushError, RingBuffer};
+/// use rtrb::RingBuffer;
 ///
-/// let (p, c) = RingBuffer::<i32>::new(1).split();
-///
-/// assert_eq!(p.push(10), Ok(()));
-/// assert_eq!(p.push(20), Err(PushError::Full(20)));
+/// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
 pub struct Producer<T> {
     /// The inner representation of the queue.
@@ -255,8 +289,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<i32>::new(100).split();
-    ///
+    /// let (p, c) = RingBuffer::<f32>::new(100).split();
     /// assert_eq!(p.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
@@ -265,23 +298,25 @@ impl<T> Producer<T> {
 }
 
 impl<T> fmt::Debug for Producer<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Producer { .. }")
     }
 }
 
-/// The consumer side of a bounded single-producer single-consumer queue.
+/// The consumer side of a [`RingBuffer`].
+///
+/// Can be moved between threads,
+/// but references from different threads are not allowed
+/// (i.e. it is [`Send`] but not [`Sync`]).
+///
+/// Can only be created with [`RingBuffer::split()`].
 ///
 /// # Examples
 ///
 /// ```
-/// use rtrb::{RingBuffer, PopError};
+/// use rtrb::RingBuffer;
 ///
-/// let (p, c) = RingBuffer::new(1).split();
-/// assert_eq!(p.push(10), Ok(()));
-///
-/// assert_eq!(c.pop(), Ok(10));
-/// assert_eq!(c.pop(), Err(PopError::Empty));
+/// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
 pub struct Consumer<T> {
     /// The inner representation of the queue.
@@ -305,16 +340,22 @@ impl<T> Consumer<T> {
     ///
     /// If the queue is empty, an error is returned.
     ///
+    /// To obtain an [`Option<T>`](std::option::Option),
+    /// use [`.ok()`](std::result::Result::ok) on the result.
+    ///
     /// # Examples
     ///
     /// ```
     /// use rtrb::{PopError, RingBuffer};
     ///
     /// let (p, c) = RingBuffer::new(1).split();
-    /// assert_eq!(p.push(10), Ok(()));
     ///
+    /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
     /// assert_eq!(c.pop(), Err(PopError::Empty));
+    ///
+    /// assert_eq!(p.push(20), Ok(()));
+    /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
     pub fn pop(&self) -> Result<T, PopError> {
         let mut head = self.head.get();
@@ -350,8 +391,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<i32>::new(100).split();
-    ///
+    /// let (p, c) = RingBuffer::<f32>::new(100).split();
     /// assert_eq!(c.capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
@@ -360,7 +400,7 @@ impl<T> Consumer<T> {
 }
 
 impl<T> fmt::Debug for Consumer<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Consumer { .. }")
     }
 }

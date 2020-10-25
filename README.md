@@ -1,7 +1,8 @@
 Real-Time Ring Buffer
 =====================
 
-Ripped off of https://github.com/crossbeam-rs/crossbeam/pull/338.
+Ripped off of https://github.com/crossbeam-rs/crossbeam/pull/338,
+with permission of the PR author [@stjepang](https://github.com/stjepang).
 
 Isolated from the rest of `crossbeam` with [git-filter-repo]:
 
