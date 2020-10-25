@@ -3,9 +3,7 @@
 //! # Examples
 //!
 //! ```
-//! use crossbeam_queue::spsc;
-//!
-//! let (p, c) = spsc::new(2);
+//! let (p, c) = rtrb::new(2);
 //!
 //! assert!(p.push(1).is_ok());
 //! assert!(p.push(2).is_ok());
@@ -23,9 +21,11 @@ use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crossbeam_utils::CachePadded;
+use cache_padded::CachePadded;
 
-use err::{PopError, PushError};
+mod error;
+
+pub use error::{PopError, PushError};
 
 /// The inner representation of a single-producer single-consumer queue.
 struct Inner<T> {
@@ -118,9 +118,7 @@ impl<T> Drop for Inner<T> {
 /// # Examples
 ///
 /// ```
-/// use crossbeam_queue::spsc;
-///
-/// let (p, c) = spsc::new::<i32>(100);
+/// let (p, c) = rtrb::new::<i32>(100);
 /// ```
 pub fn new<T>(cap: usize) -> (Producer<T>, Consumer<T>) {
     assert!(cap > 0, "capacity must be non-zero");
@@ -161,12 +159,12 @@ pub fn new<T>(cap: usize) -> (Producer<T>, Consumer<T>) {
 /// # Examples
 ///
 /// ```
-/// use crossbeam_queue::{spsc, PushError};
+/// use rtrb::PushError;
 ///
-/// let (p, c) = spsc::new::<i32>(1);
+/// let (p, c) = rtrb::new::<i32>(1);
 ///
 /// assert_eq!(p.push(10), Ok(()));
-/// assert_eq!(p.push(20), Err(PushError(20)));
+/// assert_eq!(p.push(20), Err(PushError::Full(20)));
 /// ```
 pub struct Producer<T> {
     /// The inner representation of the queue.
@@ -193,12 +191,12 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{spsc, PushError};
+    /// use rtrb::PushError;
     ///
-    /// let (p, c) = spsc::new(1);
+    /// let (p, c) = rtrb::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(p.push(20), Err(PushError(20)));
+    /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
     pub fn push(&self, value: T) -> Result<(), PushError<T>> {
         let mut head = self.head.get();
@@ -212,7 +210,7 @@ impl<T> Producer<T> {
 
             // Is the queue *really* full?
             if self.inner.distance(head, tail) == self.inner.cap {
-                return Err(PushError(value));
+                return Err(PushError::Full(value));
             }
         }
 
@@ -234,9 +232,7 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::spsc;
-    ///
-    /// let (p, c) = spsc::new::<i32>(100);
+    /// let (p, c) = rtrb::new::<i32>(100);
     ///
     /// assert_eq!(p.capacity(), 100);
     /// ```
@@ -256,13 +252,13 @@ impl<T> fmt::Debug for Producer<T> {
 /// # Examples
 ///
 /// ```
-/// use crossbeam_queue::{spsc, PopError};
+/// use rtrb::PopError;
 ///
-/// let (p, c) = spsc::new(1);
+/// let (p, c) = rtrb::new(1);
 /// assert_eq!(p.push(10), Ok(()));
 ///
 /// assert_eq!(c.pop(), Ok(10));
-/// assert_eq!(c.pop(), Err(PopError));
+/// assert_eq!(c.pop(), Err(PopError::Empty));
 /// ```
 pub struct Consumer<T> {
     /// The inner representation of the queue.
@@ -289,13 +285,13 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::{spsc, PopError};
+    /// use rtrb::PopError;
     ///
-    /// let (p, c) = spsc::new(1);
+    /// let (p, c) = rtrb::new(1);
     /// assert_eq!(p.push(10), Ok(()));
     ///
     /// assert_eq!(c.pop(), Ok(10));
-    /// assert_eq!(c.pop(), Err(PopError));
+    /// assert_eq!(c.pop(), Err(PopError::Empty));
     /// ```
     pub fn pop(&self) -> Result<T, PopError> {
         let mut head = self.head.get();
@@ -309,7 +305,7 @@ impl<T> Consumer<T> {
 
             // Is the queue *really* empty?
             if head == tail {
-                return Err(PopError);
+                return Err(PopError::Empty);
             }
         }
 
@@ -329,9 +325,7 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// ```
-    /// use crossbeam_queue::spsc;
-    ///
-    /// let (p, c) = spsc::new::<i32>(100);
+    /// let (p, c) = rtrb::new::<i32>(100);
     ///
     /// assert_eq!(c.capacity(), 100);
     /// ```
