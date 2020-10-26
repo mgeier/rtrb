@@ -26,3 +26,7 @@ bench = false # Don't disturb criterion command line parsing
 [[bench]]
 name = "push_and_pop"
 harness = false
+
+[[bench]]
+name = "slices"
+harness = false

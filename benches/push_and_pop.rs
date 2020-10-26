@@ -21,7 +21,7 @@ pub fn push_and_pop(criterion: &mut criterion::Criterion) {
     });
 
     criterion.bench_function("push-pop RingBuffer", |b| {
-        let (p, c) = RingBuffer::<u8>::new(1).split();
+        let (mut p, mut c) = RingBuffer::<u8>::new(1).split();
         let mut i = 0;
         b.iter(|| {
             p.push(black_box(i)).unwrap();
@@ -31,8 +31,8 @@ pub fn push_and_pop(criterion: &mut criterion::Criterion) {
     });
 
     criterion.bench_function("push-pop via thread", |b| {
-        let (p1, c1) = RingBuffer::<u8>::new(1).split();
-        let (p2, c2) = RingBuffer::<u8>::new(1).split();
+        let (mut p1, mut c1) = RingBuffer::<u8>::new(1).split();
+        let (mut p2, mut c2) = RingBuffer::<u8>::new(1).split();
         let keep_thread_running = Arc::new(AtomicBool::new(true));
         let keep_running = Arc::clone(&keep_thread_running);
 
@@ -67,7 +67,7 @@ pub fn push_and_pop(criterion: &mut criterion::Criterion) {
     group.sampling_mode(criterion::SamplingMode::Flat);
 
     group.bench_function("push-many-pop-many", |b| {
-        let (p, c) = RingBuffer::<u8>::new(MANY).split();
+        let (mut p, mut c) = RingBuffer::<u8>::new(MANY).split();
         b.iter(|| {
             for i in 0..MANY {
                 p.push(black_box(wrap(i))).unwrap();
@@ -79,7 +79,7 @@ pub fn push_and_pop(criterion: &mut criterion::Criterion) {
     });
 
     group.bench_function("parallel-push-pop", |b| {
-        let (p, c) = RingBuffer::<u8>::new(MANY).split();
+        let (mut p, mut c) = RingBuffer::<u8>::new(MANY).split();
 
         enum Condition {
             Wait,

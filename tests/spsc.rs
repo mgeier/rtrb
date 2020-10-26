@@ -7,7 +7,7 @@ use rtrb::RingBuffer;
 
 #[test]
 fn smoke() {
-    let (p, c) = RingBuffer::new(1).split();
+    let (mut p, mut c) = RingBuffer::new(1).split();
 
     p.push(7).unwrap();
     assert_eq!(c.pop(), Ok(7));
@@ -36,7 +36,7 @@ fn zero_capacity() {
 fn parallel() {
     const COUNT: usize = 100_000;
 
-    let (p, c) = RingBuffer::new(3).split();
+    let (mut p, mut c) = RingBuffer::new(3).split();
 
     scope(|s| {
         s.spawn(move |_| {
@@ -82,9 +82,9 @@ fn drops() {
         let additional = rng.gen_range(0, 50);
 
         DROPS.store(0, Ordering::SeqCst);
-        let (p, c) = RingBuffer::new(50).split();
+        let (mut p, mut c) = RingBuffer::new(50).split();
 
-        let p = scope(|s| {
+        let mut p = scope(|s| {
             s.spawn(move |_| {
                 for _ in 0..steps {
                     while c.pop().is_err() {}
