@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: |
           cargo test --workspace --all-features
+      - name: Test benchmarks
+        run: |
+          cargo test --benches
 
   check-code:
     runs-on: ubuntu-latest

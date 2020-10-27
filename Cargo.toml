@@ -18,3 +18,11 @@ cache-padded = "1.1"
 [dev-dependencies]
 crossbeam-utils = "0.8"
 rand = "0.7.3"
+criterion = "0.3"
+
+[lib]
+bench = false # Don't disturb criterion command line parsing
+
+[[bench]]
+name = "push_and_pop"
+harness = false
