@@ -1,0 +1,59 @@
+name: Run tests, check code
+on: [push, pull_request]
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUST_LOG: info
+jobs:
+  tests:
+    strategy:
+      matrix:
+        include:
+        - os: macos-latest
+        - os: windows-latest
+          toolchain-suffix: -gnu
+        - os: windows-latest
+          toolchain-suffix: -msvc
+        - os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable${{ matrix.toolchain-suffix }}
+          override: true
+      - name: Run tests
+        run: |
+          cargo test --workspace --all-features
+
+  check-code:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+      - name: rustfmt
+        run: |
+          cargo fmt --all -- --check
+      - name: clippy
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings
+      - name: docs
+        run: |
+          cargo doc --verbose --workspace --all-features
+      - name: packaging
+        run: |
+          cargo package --verbose
