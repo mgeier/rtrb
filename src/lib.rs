@@ -152,7 +152,6 @@ impl<T> RingBuffer<T> {
     /// Returns a pointer to the slot at position `pos`.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
-    #[inline]
     unsafe fn slot(&self, pos: usize) -> *mut T {
         if pos < self.capacity {
             self.buffer.add(pos)
@@ -164,7 +163,6 @@ impl<T> RingBuffer<T> {
     /// Increments a position by going one slot forward.
     ///
     /// The position must be in range `0 .. 2 * capacity`.
-    #[inline]
     fn increment(&self, pos: usize) -> usize {
         if pos < 2 * self.capacity - 1 {
             pos + 1
@@ -176,7 +174,6 @@ impl<T> RingBuffer<T> {
     /// Returns the distance between two positions.
     ///
     /// Positions must be in range `0 .. 2 * capacity`.
-    #[inline]
     fn distance(&self, a: usize, b: usize) -> usize {
         if a <= b {
             b - a
