@@ -63,7 +63,7 @@ pub struct RingBuffer<T> {
     tail: CachePadded<AtomicUsize>,
 
     /// The buffer holding slots.
-    buffer: *mut T,
+    data_ptr: *mut T,
 
     /// The queue capacity.
     capacity: usize,
@@ -97,7 +97,7 @@ impl<T> RingBuffer<T> {
     /// ```
     pub fn new(capacity: usize) -> RingBuffer<T> {
         // Allocate a buffer of length `capacity`.
-        let buffer = {
+        let data_ptr = {
             let mut v = Vec::<T>::with_capacity(capacity);
             let ptr = v.as_mut_ptr();
             std::mem::forget(v);
@@ -106,7 +106,7 @@ impl<T> RingBuffer<T> {
         RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
-            buffer,
+            data_ptr,
             capacity,
             _marker: PhantomData,
         }
@@ -122,14 +122,14 @@ impl<T> RingBuffer<T> {
     /// let (producer, consumer) = RingBuffer::<f32>::new(100).split();
     /// ```
     pub fn split(self) -> (Producer<T>, Consumer<T>) {
-        let rb = Arc::new(self);
+        let buffer = Arc::new(self);
         let p = Producer {
-            rb: rb.clone(),
+            buffer: buffer.clone(),
             head: Cell::new(0),
             tail: Cell::new(0),
         };
         let c = Consumer {
-            rb,
+            buffer,
             head: Cell::new(0),
             tail: Cell::new(0),
         };
@@ -163,7 +163,7 @@ impl<T> RingBuffer<T> {
     ///
     /// The position must be in range `0 .. 2 * capacity`.
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-        self.buffer.add(self.collapse_position(pos))
+        self.data_ptr.add(self.collapse_position(pos))
     }
 
     /// Increments a position by going `n` slots forward.
@@ -219,7 +219,7 @@ impl<T> Drop for RingBuffer<T> {
 
         // Finally, deallocate the buffer, but don't run any destructors.
         unsafe {
-            Vec::from_raw_parts(self.buffer, 0, self.capacity);
+            Vec::from_raw_parts(self.data_ptr, 0, self.capacity);
         }
     }
 }
@@ -241,17 +241,17 @@ impl<T> Drop for RingBuffer<T> {
 /// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
 pub struct Producer<T> {
-    /// The inner representation of the queue.
-    rb: Arc<RingBuffer<T>>,
+    /// A read-only reference to the ring buffer.
+    pub buffer: Arc<RingBuffer<T>>,
 
-    /// A copy of `rb.head` for quick access.
+    /// A copy of `buffer.head` for quick access.
     ///
-    /// This value can be stale and sometimes needs to be resynchronized with `rb.head`.
+    /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
     head: Cell<usize>,
 
-    /// A copy of `rb.tail` for quick access.
+    /// A copy of `buffer.tail` for quick access.
     ///
-    /// This value is always in sync with `rb.tail`.
+    /// This value is always in sync with `buffer.tail`.
     tail: Cell<usize>,
 }
 
@@ -277,10 +277,10 @@ impl<T> Producer<T> {
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
             unsafe {
-                self.rb.slot_ptr(tail).write(value);
+                self.buffer.slot_ptr(tail).write(value);
             }
-            let tail = self.rb.increment1(tail);
-            self.rb.tail.store(tail, Ordering::Release);
+            let tail = self.buffer.increment1(tail);
+            self.buffer.tail.store(tail, Ordering::Release);
             self.tail.set(tail);
             Ok(())
         } else {
@@ -366,23 +366,23 @@ impl<T> Producer<T> {
         let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.rb.capacity - self.rb.distance(self.head.get(), tail) < n {
+        if self.buffer.capacity - self.buffer.distance(self.head.get(), tail) < n {
             // Refresh the head ...
-            let head = self.rb.head.load(Ordering::Acquire);
+            let head = self.buffer.head.load(Ordering::Acquire);
             self.head.set(head);
 
             // ... and check if there *really* are not enough slots.
-            let slots = self.rb.capacity - self.rb.distance(head, tail);
+            let slots = self.buffer.capacity - self.buffer.distance(head, tail);
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-        let tail = self.rb.collapse_position(tail);
-        let first_len = n.min(self.rb.capacity - tail);
+        let tail = self.buffer.collapse_position(tail);
+        let first_len = n.min(self.buffer.capacity - tail);
         Ok(WriteChunkMaybeUninit {
-            first_ptr: unsafe { self.rb.buffer.add(tail) },
+            first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
             first_len,
-            second_ptr: self.rb.buffer,
+            second_ptr: self.buffer.data_ptr,
             second_len: n - first_len,
             producer: self,
         })
@@ -404,9 +404,9 @@ impl<T> Producer<T> {
     /// assert_eq!(p.slots(), 1024);
     /// ```
     pub fn slots(&self) -> usize {
-        let head = self.rb.head.load(Ordering::Acquire);
+        let head = self.buffer.head.load(Ordering::Acquire);
         self.head.set(head);
-        self.rb.capacity - self.rb.distance(head, self.tail.get())
+        self.buffer.capacity - self.buffer.distance(head, self.tail.get())
     }
 
     /// Returns `true` if there are no slots available for writing.
@@ -424,20 +424,6 @@ impl<T> Producer<T> {
         self.next_tail().is_none()
     }
 
-    /// Returns the capacity of the queue.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (p, c) = RingBuffer::<f32>::new(100).split();
-    /// assert_eq!(p.capacity(), 100);
-    /// ```
-    pub fn capacity(&self) -> usize {
-        self.rb.capacity
-    }
-
     /// Get the tail position for writing the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in write_chunk().
@@ -446,13 +432,13 @@ impl<T> Producer<T> {
         let tail = self.tail.get();
 
         // Check if the queue is *possibly* full.
-        if self.rb.distance(self.head.get(), tail) == self.rb.capacity {
+        if self.buffer.distance(self.head.get(), tail) == self.buffer.capacity {
             // Refresh the head ...
-            let head = self.rb.head.load(Ordering::Acquire);
+            let head = self.buffer.head.load(Ordering::Acquire);
             self.head.set(head);
 
             // ... and check if it's *really* full.
-            if self.rb.distance(head, tail) == self.rb.capacity {
+            if self.buffer.distance(head, tail) == self.buffer.capacity {
                 return None;
             }
         }
@@ -483,17 +469,17 @@ impl<T> fmt::Debug for Producer<T> {
 /// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
 pub struct Consumer<T> {
-    /// The inner representation of the queue.
-    rb: Arc<RingBuffer<T>>,
+    /// A read-only reference to the ring buffer.
+    pub buffer: Arc<RingBuffer<T>>,
 
-    /// A copy of `rb.head` for quick access.
+    /// A copy of `buffer.head` for quick access.
     ///
-    /// This value is always in sync with `rb.head`.
+    /// This value is always in sync with `buffer.head`.
     head: Cell<usize>,
 
-    /// A copy of `rb.tail` for quick access.
+    /// A copy of `buffer.tail` for quick access.
     ///
-    /// This value can be stale and sometimes needs to be resynchronized with `rb.tail`.
+    /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
     tail: Cell<usize>,
 }
 
@@ -528,9 +514,9 @@ impl<T> Consumer<T> {
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
-            let value = unsafe { self.rb.slot_ptr(head).read() };
-            let head = self.rb.increment1(head);
-            self.rb.head.store(head, Ordering::Release);
+            let value = unsafe { self.buffer.slot_ptr(head).read() };
+            let head = self.buffer.increment1(head);
+            self.buffer.head.store(head, Ordering::Release);
             self.head.set(head);
             Ok(value)
         } else {
@@ -556,7 +542,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
-            Ok(unsafe { &*self.rb.slot_ptr(head) })
+            Ok(unsafe { &*self.buffer.slot_ptr(head) })
         } else {
             Err(PeekError::Empty)
         }
@@ -662,24 +648,24 @@ impl<T> Consumer<T> {
         let head = self.head.get();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.rb.distance(head, self.tail.get()) < n {
+        if self.buffer.distance(head, self.tail.get()) < n {
             // Refresh the tail ...
-            let tail = self.rb.tail.load(Ordering::Acquire);
+            let tail = self.buffer.tail.load(Ordering::Acquire);
             self.tail.set(tail);
 
             // ... and check if there *really* are not enough slots.
-            let slots = self.rb.distance(head, tail);
+            let slots = self.buffer.distance(head, tail);
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
 
-        let head = self.rb.collapse_position(head);
-        let first_len = n.min(self.rb.capacity - head);
+        let head = self.buffer.collapse_position(head);
+        let first_len = n.min(self.buffer.capacity - head);
         Ok(ReadChunk {
-            first_ptr: unsafe { self.rb.buffer.add(head) },
+            first_ptr: unsafe { self.buffer.data_ptr.add(head) },
             first_len,
-            second_ptr: self.rb.buffer,
+            second_ptr: self.buffer.data_ptr,
             second_len: n - first_len,
             consumer: self,
         })
@@ -701,9 +687,9 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.slots(), 0);
     /// ```
     pub fn slots(&self) -> usize {
-        let tail = self.rb.tail.load(Ordering::Acquire);
+        let tail = self.buffer.tail.load(Ordering::Acquire);
         self.tail.set(tail);
-        self.rb.distance(self.head.get(), tail)
+        self.buffer.distance(self.head.get(), tail)
     }
 
     /// Returns `true` if there are no slots available for reading.
@@ -721,20 +707,6 @@ impl<T> Consumer<T> {
         self.next_head().is_none()
     }
 
-    /// Returns the capacity of the queue.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (p, c) = RingBuffer::<f32>::new(100).split();
-    /// assert_eq!(c.capacity(), 100);
-    /// ```
-    pub fn capacity(&self) -> usize {
-        self.rb.capacity
-    }
-
     /// Get the head position for reading the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in read_chunk().
@@ -745,7 +717,7 @@ impl<T> Consumer<T> {
         // Check if the queue is *possibly* empty.
         if head == self.tail.get() {
             // Refresh the tail ...
-            let tail = self.rb.tail.load(Ordering::Acquire);
+            let tail = self.buffer.tail.load(Ordering::Acquire);
             self.tail.set(tail);
 
             // ... and check if it's *really* empty.
@@ -839,8 +811,8 @@ impl<'a, T> WriteChunkMaybeUninit<'a, T> {
     /// The user must make sure that the first `n` elements
     /// (and not more, in case `T` implements [`Drop`]) have been initialized.
     pub unsafe fn commit(self, n: usize) {
-        let tail = self.producer.rb.increment(self.producer.tail.get(), n);
-        self.producer.rb.tail.store(tail, Ordering::Release);
+        let tail = self.producer.buffer.increment(self.producer.tail.get(), n);
+        self.producer.buffer.tail.store(tail, Ordering::Release);
         self.producer.tail.set(tail);
     }
 
@@ -883,22 +855,22 @@ impl<'a, T> ReadChunk<'a, T> {
     pub fn commit(self, n: usize) {
         let head = self.consumer.head.get();
         // Safety: head has not yet been incremented
-        let ptr = unsafe { self.consumer.rb.slot_ptr(head) };
+        let ptr = unsafe { self.consumer.buffer.slot_ptr(head) };
         let first_len = self.first_len.min(n);
         for i in 0..first_len {
             unsafe {
                 ptr.add(i).drop_in_place();
             }
         }
-        let ptr = self.consumer.rb.buffer;
+        let ptr = self.consumer.buffer.data_ptr;
         let second_len = self.second_len.min(n - first_len);
         for i in 0..second_len {
             unsafe {
                 ptr.add(i).drop_in_place();
             }
         }
-        let head = self.consumer.rb.increment(head, n);
-        self.consumer.rb.head.store(head, Ordering::Release);
+        let head = self.consumer.buffer.increment(head, n);
+        self.consumer.buffer.head.store(head, Ordering::Release);
         self.consumer.head.set(head);
     }
 

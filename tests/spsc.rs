@@ -21,8 +21,8 @@ fn smoke() {
 fn capacity() {
     for i in 1..10 {
         let (p, c) = RingBuffer::<i32>::new(i).split();
-        assert_eq!(p.capacity(), i);
-        assert_eq!(c.capacity(), i);
+        assert_eq!(p.buffer.capacity(), i);
+        assert_eq!(c.buffer.capacity(), i);
     }
 }
 
