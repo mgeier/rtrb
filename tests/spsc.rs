@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_utils::thread::scope;
 use rand::{thread_rng, Rng};
 
-use rtrb::RingBuffer;
+use rtrb::{ChunkError, RingBuffer};
 
 #[test]
 fn smoke() {
@@ -27,9 +27,38 @@ fn capacity() {
 }
 
 #[test]
-#[should_panic(expected = "capacity must be non-zero")]
 fn zero_capacity() {
-    let _ = RingBuffer::<i32>::new(0);
+    let (mut p, mut c) = RingBuffer::<i32>::new(0).split();
+
+    assert_eq!(p.slots(), 0);
+    assert_eq!(c.slots(), 0);
+
+    assert!(p.is_full());
+    assert!(c.is_empty());
+
+    assert!(p.push(10).is_err());
+    assert!(c.pop().is_err());
+
+    assert_eq!(p.write_chunk(1).unwrap_err(), ChunkError::TooFewSlots(0));
+    assert_eq!(c.read_chunk(1).unwrap_err(), ChunkError::TooFewSlots(0));
+
+    if let Ok(mut chunk) = p.write_chunk(0) {
+        let (first, second) = chunk.as_mut_slices();
+        assert!(first.is_empty());
+        assert!(second.is_empty());
+        chunk.commit_all();
+    } else {
+        unreachable!();
+    }
+
+    if let Ok(chunk) = c.read_chunk(0) {
+        let (first, second) = chunk.as_slices();
+        assert!(first.is_empty());
+        assert!(second.is_empty());
+        chunk.commit_all();
+    } else {
+        unreachable!();
+    }
 }
 
 #[test]

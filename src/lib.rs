@@ -78,10 +78,6 @@ impl<T> RingBuffer<T> {
     /// The returned [`RingBuffer`] is typically immediately split into
     /// the producer and the consumer side by [`RingBuffer::split`].
     ///
-    /// # Panics
-    ///
-    /// Panics if the capacity is zero.
-    ///
     /// # Examples
     ///
     /// ```
@@ -100,8 +96,6 @@ impl<T> RingBuffer<T> {
     /// assert!(producer.push(0.0f32).is_ok());
     /// ```
     pub fn new(capacity: usize) -> RingBuffer<T> {
-        assert!(capacity > 0, "capacity must be non-zero");
-
         // Allocate a buffer of length `capacity`.
         let buffer = {
             let mut v = Vec::<T>::with_capacity(capacity);
