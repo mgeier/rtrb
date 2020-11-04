@@ -33,6 +33,7 @@
 //! ```
 
 #![warn(rust_2018_idioms)]
+#![warn(single_use_lifetimes)]
 #![deny(missing_docs)]
 
 use std::cell::Cell;
@@ -734,7 +735,7 @@ impl<T> Consumer<T> {
 #[derive(Debug)]
 pub struct WriteChunk<'a, T>(WriteChunkMaybeUninit<'a, T>);
 
-impl<'a, T> WriteChunk<'a, T>
+impl<T> WriteChunk<'_, T>
 where
     T: Copy + Default,
 {
@@ -786,7 +787,7 @@ pub struct WriteChunkMaybeUninit<'a, T> {
     producer: &'a Producer<T>,
 }
 
-impl<'a, T> WriteChunkMaybeUninit<'a, T> {
+impl<T> WriteChunkMaybeUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -835,7 +836,7 @@ pub struct ReadChunk<'a, T> {
     consumer: &'a mut Consumer<T>,
 }
 
-impl<'a, T> ReadChunk<'a, T> {
+impl<T> ReadChunk<'_, T> {
     /// Returns two slices for reading from the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
