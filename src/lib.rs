@@ -50,6 +50,7 @@ use cache_padded::CachePadded;
 /// both of which can be obtained with [`RingBuffer::split()`].
 ///
 /// *See also the [crate-level documentation](crate).*
+#[derive(Debug)]
 pub struct RingBuffer<T> {
     /// The head of the queue.
     ///
@@ -239,6 +240,7 @@ impl<T> Drop for RingBuffer<T> {
 ///
 /// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
+#[derive(Debug)]
 pub struct Producer<T> {
     /// A read-only reference to the ring buffer.
     pub buffer: Arc<RingBuffer<T>>,
@@ -445,12 +447,6 @@ impl<T> Producer<T> {
     }
 }
 
-impl<T> fmt::Debug for Producer<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("Producer { .. }")
-    }
-}
-
 /// The consumer side of a [`RingBuffer`].
 ///
 /// Can be moved between threads,
@@ -467,6 +463,7 @@ impl<T> fmt::Debug for Producer<T> {
 ///
 /// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
+#[derive(Debug)]
 pub struct Consumer<T> {
     /// A read-only reference to the ring buffer.
     pub buffer: Arc<RingBuffer<T>>,
@@ -877,12 +874,6 @@ impl<'a, T> ReadChunk<'a, T> {
     pub fn commit_all(self) {
         let n = self.first_len + self.second_len;
         self.commit(n)
-    }
-}
-
-impl<T> fmt::Debug for Consumer<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("Consumer { .. }")
     }
 }
 
