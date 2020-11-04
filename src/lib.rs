@@ -771,6 +771,16 @@ where
         // Safety: All slots have been initialized in as_mut_slices().
         unsafe { self.0.commit_all() }
     }
+
+    /// Returns the number of slots in the chunk.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns `true` if the chunk contains no slots.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// Structure for writing into multiple (possibly uninitialized) slots in one go.
@@ -819,8 +829,18 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     ///
     /// The user must make sure that all elements have been initialized.
     pub unsafe fn commit_all(self) {
-        let n = self.first_len + self.second_len;
-        self.commit(n)
+        let slots = self.len();
+        self.commit(slots)
+    }
+
+    /// Returns the number of slots in the chunk.
+    pub fn len(&self) -> usize {
+        self.first_len + self.second_len
+    }
+
+    /// Returns `true` if the chunk contains no slots.
+    pub fn is_empty(&self) -> bool {
+        self.first_len == 0
     }
 }
 
@@ -873,8 +893,20 @@ impl<T> ReadChunk<'_, T> {
 
     /// Drops all slots of the chunk, making the space available for writing again.
     pub fn commit_all(self) {
-        let n = self.first_len + self.second_len;
-        self.commit(n)
+        let slots = self.len();
+        self.commit(slots)
+    }
+
+    /// Returns the number of slots in the chunk.
+    pub fn len(&self) -> usize {
+        self.first_len + self.second_len
+    }
+
+    /// Returns `true` if the chunk contains no slots.
+    pub fn is_empty(&self) -> bool {
+        self.first_len == 0
+    }
+}
     }
 }
 
