@@ -907,6 +907,50 @@ impl<T> ReadChunk<'_, T> {
         self.first_len == 0
     }
 }
+
+impl std::io::Write for Producer<u8> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut chunk = match self.write_chunk_maybe_uninit(buf.len()) {
+            Err(ChunkError::TooFewSlots(n)) if n > 0 => self.write_chunk_maybe_uninit(n),
+            x => x,
+        }
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::WouldBlock, e))?;
+        let end = chunk.len();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        // Safety: All slots will be initialized
+        unsafe {
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), first.as_mut_ptr() as *mut _, mid);
+            std::ptr::copy_nonoverlapping(
+                buf.as_ptr().add(mid),
+                second.as_mut_ptr() as *mut _,
+                end - mid,
+            );
+            chunk.commit_all();
+        }
+        Ok(end)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        // Nothing to do here.
+        Ok(())
+    }
+}
+
+impl std::io::Read for Consumer<u8> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let chunk = match self.read_chunk(buf.len()) {
+            Err(ChunkError::TooFewSlots(n)) if n > 0 => self.read_chunk(n),
+            x => x,
+        }
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::WouldBlock, e))?;
+        let (first, second) = chunk.as_slices();
+        let mid = first.len();
+        let end = chunk.len();
+        buf[..mid].copy_from_slice(first);
+        buf[mid..end].copy_from_slice(second);
+        chunk.commit_all();
+        Ok(end)
     }
 }
 

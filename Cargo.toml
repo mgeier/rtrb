@@ -29,3 +29,7 @@ harness = false
 [[bench]]
 name = "slices"
 harness = false
+
+[[bench]]
+name = "write_and_read"
+harness = false
