@@ -46,6 +46,9 @@ use cache_padded::CachePadded;
 
 /// A bounded single-producer single-consumer queue.
 ///
+/// Elements can be written with a [`Producer`] and read with a [`Consumer`],
+/// both of which can be obtained with [`RingBuffer::split()`].
+///
 /// *See also the [crate-level documentation](crate).*
 pub struct RingBuffer<T> {
     /// The head of the queue.
@@ -72,7 +75,7 @@ impl<T> RingBuffer<T> {
     /// Creates a [`RingBuffer`] with the given capacity.
     ///
     /// The returned [`RingBuffer`] is typically immediately split into
-    /// the producer and the consumer side by [`RingBuffer::split`].
+    /// the [`Producer`] and the [`Consumer`] side by [`RingBuffer::split()`].
     ///
     /// # Examples
     ///
@@ -226,7 +229,7 @@ impl<T> Drop for RingBuffer<T> {
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Can only be created with [`RingBuffer::split`]
+/// Can only be created with [`RingBuffer::split()`]
 /// (together with its counterpart, the [`Consumer`]).
 ///
 /// # Examples
@@ -289,19 +292,19 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`WriteChunk::as_mut_slices`].
+    /// The elements can be accessed with [`WriteChunk::as_mut_slices()`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunk::commit`]
-    /// or [`WriteChunk::commit_all`].
+    /// This has to be explicitly done by calling [`WriteChunk::commit()`]
+    /// or [`WriteChunk::commit_all()`].
     ///
     /// The type parameter `T` has a trait bound of [`Copy`],
     /// which makes sure that no destructors are called at any time
     /// (because it implies [`!Drop`](Drop)).
     ///
     /// For an unsafe alternative that has no restrictions on `T`,
-    /// see [`Producer::write_chunk_maybe_uninit`].
+    /// see [`Producer::write_chunk_maybe_uninit()`].
     ///
     /// # Examples
     ///
@@ -341,12 +344,12 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`WriteChunkMaybeUninit::as_mut_slices`].
+    /// The elements can be accessed with [`WriteChunkMaybeUninit::as_mut_slices()`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunkMaybeUninit::commit`]
-    /// or [`WriteChunkMaybeUninit::commit_all`].
+    /// This has to be explicitly done by calling [`WriteChunkMaybeUninit::commit()`]
+    /// or [`WriteChunkMaybeUninit::commit_all()`].
     ///
     /// # Safety
     ///
@@ -354,7 +357,7 @@ impl<T> Producer<T> {
     /// as well as invoking some methods of [`WriteChunkMaybeUninit`].
     ///
     /// For a safe alternative that provides only initialized slots,
-    /// see [`Producer::write_chunk`].
+    /// see [`Producer::write_chunk()`].
     pub fn write_chunk_maybe_uninit(
         &mut self,
         n: usize,
@@ -387,7 +390,7 @@ impl<T> Producer<T> {
     /// Returns the number of slots available for writing.
     ///
     /// To check for a single available slot,
-    /// using [`Producer::is_full`] is often quicker
+    /// using [`Producer::is_full()`] is often quicker
     /// (because it might not have to check an atomic variable).
     ///
     /// # Examples
@@ -454,7 +457,7 @@ impl<T> fmt::Debug for Producer<T> {
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Can only be created with [`RingBuffer::split`]
+/// Can only be created with [`RingBuffer::split()`]
 /// (together with its counterpart, the [`Producer`]).
 ///
 /// # Examples
@@ -549,12 +552,12 @@ impl<T> Consumer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`ReadChunk::as_slices`].
+    /// The elements can be accessed with [`ReadChunk::as_slices()`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be written again by the [`Producer`].
-    /// This has to be explicitly done by calling [`ReadChunk::commit`]
-    /// or [`ReadChunk::commit_all`].  You can "peek" at the contained values
+    /// This has to be explicitly done by calling [`ReadChunk::commit()`]
+    /// or [`ReadChunk::commit_all()`].  You can "peek" at the contained values
     /// by simply not calling any of the "commit" methods.
     ///
     /// # Examples
@@ -594,7 +597,7 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.pop(), Ok(40));
     /// ```
     ///
-    /// Items are dropped when [`ReadChunk::commit`] or [`ReadChunk::commit_all`] is called
+    /// Items are dropped when [`ReadChunk::commit()`] or [`ReadChunk::commit_all()`] is called
     /// (which is only relevant if `T` implements [`Drop`]).
     ///
     /// ```
@@ -670,7 +673,7 @@ impl<T> Consumer<T> {
     /// Returns the number of slots available for reading.
     ///
     /// To check for a single available slot,
-    /// using [`Consumer::is_empty`] is often quicker
+    /// using [`Consumer::is_empty()`] is often quicker
     /// (because it might not have to check an atomic variable).
     ///
     /// # Examples
@@ -727,7 +730,7 @@ impl<T> Consumer<T> {
 
 /// Structure for writing into multiple slots in one go.
 ///
-/// This is returned from [`Producer::write_chunk`].
+/// This is returned from [`Producer::write_chunk()`].
 ///
 /// For an unsafe alternative that provides possibly uninitialized slots,
 /// see [`WriteChunkMaybeUninit`].
@@ -774,7 +777,7 @@ where
 
 /// Structure for writing into multiple (possibly uninitialized) slots in one go.
 ///
-/// This is returned from [`Producer::write_chunk_maybe_uninit`].
+/// This is returned from [`Producer::write_chunk_maybe_uninit()`].
 ///
 /// For a safe alternative that only provides initialized slots, see [`WriteChunk`].
 #[derive(Debug)]
@@ -825,7 +828,7 @@ impl<'a, T> WriteChunkMaybeUninit<'a, T> {
 
 /// Structure for reading from multiple slots in one go.
 ///
-/// This is returned from [`Consumer::read_chunk`].
+/// This is returned from [`Consumer::read_chunk()`].
 #[derive(Debug)]
 pub struct ReadChunk<'a, T> {
     first_ptr: *const T,
@@ -883,7 +886,7 @@ impl<T> fmt::Debug for Consumer<T> {
     }
 }
 
-/// Error type for [`Consumer::pop`].
+/// Error type for [`Consumer::pop()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PopError {
     /// The queue was empty.
@@ -900,7 +903,7 @@ impl fmt::Display for PopError {
     }
 }
 
-/// Error type for [`Consumer::peek`].
+/// Error type for [`Consumer::peek()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PeekError {
     /// The queue was empty.
@@ -917,7 +920,7 @@ impl fmt::Display for PeekError {
     }
 }
 
-/// Error type for [`Producer::push`].
+/// Error type for [`Producer::push()`].
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum PushError<T> {
     /// The queue was full.
@@ -942,8 +945,8 @@ impl<T> fmt::Display for PushError<T> {
     }
 }
 
-/// Error type for [`Consumer::read_chunk`], [`Producer::write_chunk`]
-/// and [`Producer::write_chunk_maybe_uninit`].
+/// Error type for [`Consumer::read_chunk()`], [`Producer::write_chunk()`]
+/// and [`Producer::write_chunk_maybe_uninit()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ChunkError {
     /// Fewer than the requested number of slots were available.
