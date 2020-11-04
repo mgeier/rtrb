@@ -44,10 +44,6 @@ use std::sync::Arc;
 
 use cache_padded::CachePadded;
 
-mod error;
-
-pub use error::{ChunkError, PeekError, PopError, PushError};
-
 /// A bounded single-producer single-consumer queue.
 ///
 /// *See also the [crate-level documentation](crate).*
@@ -884,5 +880,86 @@ impl<'a, T> ReadChunk<'a, T> {
 impl<T> fmt::Debug for Consumer<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Consumer { .. }")
+    }
+}
+
+/// Error type for [`Consumer::pop`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PopError {
+    /// The queue was empty.
+    Empty,
+}
+
+impl std::error::Error for PopError {}
+
+impl fmt::Display for PopError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PopError::Empty => "empty ring buffer".fmt(f),
+        }
+    }
+}
+
+/// Error type for [`Consumer::peek`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PeekError {
+    /// The queue was empty.
+    Empty,
+}
+
+impl std::error::Error for PeekError {}
+
+impl fmt::Display for PeekError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PeekError::Empty => "empty ring buffer".fmt(f),
+        }
+    }
+}
+
+/// Error type for [`Producer::push`].
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum PushError<T> {
+    /// The queue was full.
+    Full(T),
+}
+
+impl<T> std::error::Error for PushError<T> {}
+
+impl<T> fmt::Debug for PushError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PushError::Full(_) => f.pad("Full(_)"),
+        }
+    }
+}
+
+impl<T> fmt::Display for PushError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PushError::Full(_) => "full ring buffer".fmt(f),
+        }
+    }
+}
+
+/// Error type for [`Consumer::read_chunk`], [`Producer::write_chunk`]
+/// and [`Producer::write_chunk_maybe_uninit`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ChunkError {
+    /// Fewer than the requested number of slots were available.
+    ///
+    /// Contains the number of slots that were available.
+    TooFewSlots(usize),
+}
+
+impl std::error::Error for ChunkError {}
+
+impl fmt::Display for ChunkError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChunkError::TooFewSlots(n) => {
+                format!("only {} slots available in ring buffer", n).fmt(f)
+            }
+        }
     }
 }
