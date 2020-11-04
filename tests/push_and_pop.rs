@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crossbeam_utils::thread::scope;
 use rand::{thread_rng, Rng};
 
 use rtrb::{ChunkError, RingBuffer};
@@ -64,29 +63,25 @@ fn zero_capacity() {
 #[test]
 fn parallel() {
     const COUNT: usize = 100_000;
-
     let (mut p, mut c) = RingBuffer::new(3).split();
-
-    scope(|s| {
-        s.spawn(move |_| {
-            for i in 0..COUNT {
-                loop {
-                    if let Ok(x) = c.pop() {
-                        assert_eq!(x, i);
-                        break;
-                    }
+    let pop_thread = std::thread::spawn(move || {
+        for i in 0..COUNT {
+            loop {
+                if let Ok(x) = c.pop() {
+                    assert_eq!(x, i);
+                    break;
                 }
             }
-            assert!(c.pop().is_err());
-        });
-
-        s.spawn(move |_| {
-            for i in 0..COUNT {
-                while p.push(i).is_err() {}
-            }
-        });
-    })
-    .unwrap();
+        }
+        assert!(c.pop().is_err());
+    });
+    let push_thread = std::thread::spawn(move || {
+        for i in 0..COUNT {
+            while p.push(i).is_err() {}
+        }
+    });
+    push_thread.join().unwrap();
+    pop_thread.join().unwrap();
 }
 
 #[test]
@@ -112,26 +107,21 @@ fn drops() {
 
         DROPS.store(0, Ordering::SeqCst);
         let (mut p, mut c) = RingBuffer::new(50).split();
-
-        let mut p = scope(|s| {
-            s.spawn(move |_| {
-                for _ in 0..steps {
-                    while c.pop().is_err() {}
+        let pop_thread = std::thread::spawn(move || {
+            for _ in 0..steps {
+                while c.pop().is_err() {}
+            }
+        });
+        let push_thread = std::thread::spawn(move || {
+            for _ in 0..steps {
+                while p.push(DropCounter).is_err() {
+                    DROPS.fetch_sub(1, Ordering::SeqCst);
                 }
-            });
-
-            s.spawn(move |_| {
-                for _ in 0..steps {
-                    while p.push(DropCounter).is_err() {
-                        DROPS.fetch_sub(1, Ordering::SeqCst);
-                    }
-                }
-                p
-            })
-            .join()
-            .unwrap()
-        })
-        .unwrap();
+            }
+            p
+        });
+        p = push_thread.join().unwrap();
+        pop_thread.join().unwrap();
 
         for _ in 0..additional {
             p.push(DropCounter).unwrap();
