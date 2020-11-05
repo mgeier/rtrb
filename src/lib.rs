@@ -280,6 +280,9 @@ impl<T> RingBuffer<T> {
     /// Same for [`Producer::write_chunk()`]/[`WriteChunk::as_mut_slices()`] and
     /// [`Producer::write_chunk_uninit()`]/[`WriteChunkUninit::as_mut_slices()`]
     /// (as long as [`Producer::push()`] is *not* used in-between).
+    ///
+    /// If above conditions have been violated, the wrap-around guarantee can be restored
+    /// wit [`reset()`](RingBuffer::reset).
     pub fn with_chunks(chunks: usize, chunk_size: usize) -> RingBuffer<T> {
         // NB: Currently, there is nothing special to do here, but in the future
         //     it might be necessary to take some steps to guarantee the promised behavior.
@@ -308,6 +311,64 @@ impl<T> RingBuffer<T> {
             tail: Cell::new(0),
         };
         (p, c)
+    }
+
+    /// Resets a ring buffer.
+    ///
+    /// This drops all elements that are currently in the queue
+    /// (running their destructors if `T` implements [`Drop`]) and
+    /// resets the internal read and write positions to the beginning of the buffer.
+    ///
+    /// This also resets the guarantees given by [`with_chunks()`](RingBuffer::with_chunks).
+    ///
+    /// Exclusive access to both [`Producer`] and [`Consumer`] is needed for this operation.
+    /// They can be moved between threads, for example, with a `RingBuffer<Producer<T>>`
+    /// and a `RingBuffer<Consumer<T>>`, respectively.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `producer` and `consumer` do not originate from the same `RingBuffer`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(2).split();
+    ///
+    /// p = std::thread::spawn(move || {
+    ///     assert_eq!(p.push(10), Ok(()));
+    ///     p
+    /// }).join().unwrap();
+    ///
+    /// RingBuffer::reset(&mut p, &mut c);
+    ///
+    /// // The full capacity is now available for writing:
+    /// if let Ok(mut chunk) = p.write_chunk(p.buffer.capacity()) {
+    ///     let (first, second) = chunk.as_mut_slices();
+    ///     // The first slice is now guaranteed to span the whole buffer:
+    ///     first[0] = 20;
+    ///     first[1] = 30;
+    ///     assert!(second.is_empty());
+    ///     chunk.commit_all();
+    /// } else {
+    ///     unreachable!();
+    /// }
+    /// ```
+    pub fn reset(producer: &mut Producer<T>, consumer: &mut Consumer<T>) {
+        assert!(
+            Arc::ptr_eq(&producer.buffer, &consumer.buffer),
+            "producer and consumer not from the same ring buffer"
+        );
+        consumer.read_chunk(consumer.slots()).unwrap().commit_all();
+        assert_eq!(
+            producer.buffer.head.swap(0, Ordering::Relaxed),
+            producer.buffer.tail.swap(0, Ordering::Relaxed)
+        );
+        producer.head.set(0);
+        producer.tail.set(0);
+        consumer.head.set(0);
+        consumer.tail.set(0);
     }
 
     /// Returns the capacity of the queue.
