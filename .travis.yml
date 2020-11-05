@@ -1,0 +1,12 @@
+language: rust
+arch:
+  - amd64
+  - ppc64le
+  - s390x
+  - arm64
+cache: cargo
+script:
+  - cargo test
+  - cargo test --benches
+  - cargo test --release
+  - cargo test --release --benches
