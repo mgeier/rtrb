@@ -39,7 +39,7 @@
 use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -97,17 +97,10 @@ impl<T> RingBuffer<T> {
     /// assert!(producer.push(0.0f32).is_ok());
     /// ```
     pub fn new(capacity: usize) -> RingBuffer<T> {
-        // Allocate a buffer of length `capacity`.
-        let data_ptr = {
-            let mut v = Vec::<T>::with_capacity(capacity);
-            let ptr = v.as_mut_ptr();
-            std::mem::forget(v);
-            ptr
-        };
         RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
-            data_ptr,
+            data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
             _marker: PhantomData,
         }
