@@ -800,7 +800,11 @@ where
         }
     }
 
-    /// Makes the given number of slots available for reading.
+    /// Makes the first `n` slots of the chunk available for reading.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is greater than the number of slots in the chunk.
     pub fn commit(self, n: usize) {
         // Safety: All slots have been initialized in From::from() and there are no destructors.
         unsafe { self.0.commit(n) }
@@ -887,16 +891,19 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
         }
     }
 
-    /// Makes the given number of slots available for reading.
+    /// Makes the first `n` slots of the chunk available for reading.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is greater than the number of slots in the chunk.
     ///
     /// # Safety
     ///
     /// The user must make sure that the first `n` elements
     /// (and not more, in case `T` implements [`Drop`]) have been initialized.
     pub unsafe fn commit(self, n: usize) {
-        let tail = self.producer.buffer.increment(self.producer.tail.get(), n);
-        self.producer.buffer.tail.store(tail, Ordering::Release);
-        self.producer.tail.set(tail);
+        assert!(n <= self.len(), "cannot commit more than chunk size");
+        self.commit_unchecked(n)
     }
 
     /// Makes the iterated slots available for reading.
@@ -906,7 +913,7 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     /// The user must make sure that all iterated elements have been initialized.
     pub unsafe fn commit_iterated(self) {
         let slots = self.iterated;
-        self.commit(slots)
+        self.commit_unchecked(slots)
     }
 
     /// Makes the whole chunk available for reading.
@@ -916,7 +923,13 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     /// The user must make sure that all elements have been initialized.
     pub unsafe fn commit_all(self) {
         let slots = self.len();
-        self.commit(slots)
+        self.commit_unchecked(slots)
+    }
+
+    unsafe fn commit_unchecked(self, n: usize) {
+        let tail = self.producer.buffer.increment(self.producer.tail.get(), n);
+        self.producer.buffer.tail.store(tail, Ordering::Release);
+        self.producer.tail.set(tail);
     }
 
     /// Returns the number of slots in the chunk.
@@ -983,39 +996,44 @@ impl<T> ReadChunk<'_, T> {
         )
     }
 
-    /// Drops the given number of slots, making the space available for writing again.
+    /// Drops the first `n` slots of the chunk, making the space available for writing again.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is greater than the number of slots in the chunk.
     pub fn commit(self, n: usize) {
-        let head = self.consumer.head.get();
-        // Safety: head has not yet been incremented
-        let ptr = unsafe { self.consumer.buffer.slot_ptr(head) };
-        let first_len = self.first_len.min(n);
-        for i in 0..first_len {
-            unsafe {
-                ptr.add(i).drop_in_place();
-            }
-        }
-        let ptr = self.consumer.buffer.data_ptr;
-        let second_len = self.second_len.min(n - first_len);
-        for i in 0..second_len {
-            unsafe {
-                ptr.add(i).drop_in_place();
-            }
-        }
-        let head = self.consumer.buffer.increment(head, n);
-        self.consumer.buffer.head.store(head, Ordering::Release);
-        self.consumer.head.set(head);
+        assert!(n <= self.len(), "cannot commit more than chunk size");
+        unsafe { self.commit_unchecked(n) }
     }
 
     /// Drops all slots that have been iterated, making the space available for writing again.
     pub fn commit_iterated(self) {
         let slots = self.iterated;
-        self.commit(slots)
+        unsafe { self.commit_unchecked(slots) }
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
     pub fn commit_all(self) {
         let slots = self.len();
-        self.commit(slots)
+        unsafe { self.commit_unchecked(slots) }
+    }
+
+    unsafe fn commit_unchecked(self, n: usize) {
+        let head = self.consumer.head.get();
+        // Safety: head has not yet been incremented
+        let ptr = self.consumer.buffer.slot_ptr(head);
+        let first_len = self.first_len.min(n);
+        for i in 0..first_len {
+            ptr.add(i).drop_in_place();
+        }
+        let ptr = self.consumer.buffer.data_ptr;
+        let second_len = self.second_len.min(n - first_len);
+        for i in 0..second_len {
+            ptr.add(i).drop_in_place();
+        }
+        let head = self.consumer.buffer.increment(head, n);
+        self.consumer.buffer.head.store(head, Ordering::Release);
+        self.consumer.head.set(head);
     }
 
     /// Returns the number of slots in the chunk.
