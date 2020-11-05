@@ -292,8 +292,8 @@ impl<T> Producer<T> {
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunk::commit()`]
-    /// or [`WriteChunk::commit_all()`].
+    /// This has to be explicitly done by calling [`WriteChunk::commit()`],
+    /// [`WriteChunk::commit_iterated()`] or [`WriteChunk::commit_all()`].
     ///
     /// The type parameter `T` has a trait bound of [`Copy`],
     /// which makes sure that no destructors are called at any time
@@ -332,7 +332,7 @@ impl<T> Producer<T> {
     where
         T: Copy + Default,
     {
-        self.write_chunk_maybe_uninit(n).map(WriteChunk)
+        self.write_chunk_maybe_uninit(n).map(WriteChunk::from)
     }
 
     /// Returns `n` (possibly uninitialized) slots for writing.
@@ -344,8 +344,9 @@ impl<T> Producer<T> {
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunkMaybeUninit::commit()`]
-    /// or [`WriteChunkMaybeUninit::commit_all()`].
+    /// This has to be explicitly done by calling [`WriteChunkMaybeUninit::commit()`],
+    /// [`WriteChunkMaybeUninit::commit_iterated()`] or
+    /// [`WriteChunkMaybeUninit::commit_all()`].
     ///
     /// # Safety
     ///
@@ -380,6 +381,7 @@ impl<T> Producer<T> {
             second_ptr: self.buffer.data_ptr,
             second_len: n - first_len,
             producer: self,
+            iterated: 0,
         })
     }
 
@@ -543,13 +545,15 @@ impl<T> Consumer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`ReadChunk::as_slices()`].
+    /// The elements can be accessed with [`ReadChunk::as_slices()`] or
+    /// by iterating over (a `&mut` to) the [`ReadChunk`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be written again by the [`Producer`].
-    /// This has to be explicitly done by calling [`ReadChunk::commit()`]
-    /// or [`ReadChunk::commit_all()`].  You can "peek" at the contained values
-    /// by simply not calling any of the "commit" methods.
+    /// This has to be explicitly done by calling [`ReadChunk::commit()`],
+    /// [`ReadChunk::commit_iterated()`] or [`ReadChunk::commit_all()`].
+    /// You can "peek" at the contained values by simply
+    /// not calling any of the "commit" methods.
     ///
     /// # Examples
     ///
@@ -583,12 +587,25 @@ impl<T> Consumer<T> {
     /// } else {
     ///     unreachable!();
     /// };
-    ///
     /// // ... which means the last element is still in the queue:
     /// assert_eq!(c.pop(), Ok(40));
+    ///
+    /// assert_eq!(p.push(50), Ok(()));
+    /// assert_eq!(p.push(60), Ok(()));
+    /// assert_eq!(p.push(70), Ok(()));
+    /// if let Ok(mut chunk) = c.read_chunk(3) {
+    ///     // Use &mut to iterate
+    ///     let v: Vec<_> = (&mut chunk).collect();
+    ///     assert_eq!(v, &[&50, &60, &70]);
+    ///     chunk.commit_iterated(); // Make iterated items available for writing
+    /// } else {
+    ///     unreachable!();
+    /// }
+    /// assert!(c.is_empty());
     /// ```
     ///
-    /// Items are dropped when [`ReadChunk::commit()`] or [`ReadChunk::commit_all()`] is called
+    /// Items are dropped when [`ReadChunk::commit()`], [`ReadChunk::commit_iterated()`]
+    /// or [`ReadChunk::commit_all()`] is called
     /// (which is only relevant if `T` implements [`Drop`]).
     ///
     /// ```
@@ -658,6 +675,7 @@ impl<T> Consumer<T> {
             second_ptr: self.buffer.data_ptr,
             second_len: n - first_len,
             consumer: self,
+            iterated: 0,
         })
     }
 
@@ -719,14 +737,48 @@ impl<T> Consumer<T> {
     }
 }
 
-/// Structure for writing into multiple slots in one go.
+/// Structure for writing into multiple ([`Default`]-initialized) slots in one go.
 ///
 /// This is returned from [`Producer::write_chunk()`].
 ///
 /// For an unsafe alternative that provides possibly uninitialized slots,
 /// see [`WriteChunkMaybeUninit`].
+///
+/// The slots (which initially contain [`Default`] values) can be accessed with
+/// [`as_mut_slices()`](WriteChunk::as_mut_slices)
+/// or by iteration, which yields mutable references (in other words: `&mut T`).
+/// A mutable reference (`&mut`) to the `WriteChunk`
+/// should be used to iterate over it.
+/// Each slot can only be iterated once and the number of iterations is tracked.
+///
+/// After writing, the provided slots are *not* automatically made available
+/// to be read by the [`Consumer`].
+/// If desired, this has to be explicitly done by calling
+/// [`commit()`](WriteChunk::commit),
+/// [`commit_iterated()`](WriteChunk::commit_iterated) or
+/// [`commit_all()`](WriteChunk::commit_all).
 #[derive(Debug)]
 pub struct WriteChunk<'a, T>(WriteChunkMaybeUninit<'a, T>);
+
+impl<'a, T> From<WriteChunkMaybeUninit<'a, T>> for WriteChunk<'a, T>
+where
+    T: Copy + Default,
+{
+    /// Fills all slots with the [`Default`] value.
+    fn from(chunk: WriteChunkMaybeUninit<'a, T>) -> Self {
+        for i in 0..chunk.first_len {
+            unsafe {
+                chunk.first_ptr.add(i).write(Default::default());
+            }
+        }
+        for i in 0..chunk.second_len {
+            unsafe {
+                chunk.second_ptr.add(i).write(Default::default());
+            }
+        }
+        WriteChunk(chunk)
+    }
+}
 
 impl<T> WriteChunk<'_, T>
 where
@@ -739,29 +791,30 @@ where
     ///
     /// All slots are initially filled with their [`Default`] value.
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-        let (first, second) = self.0.as_mut_slices();
-        for i in first.iter_mut().chain(second.iter_mut()) {
-            unsafe {
-                i.as_mut_ptr().write(Default::default());
-            }
-        }
+        // Safety: All slots have been initialized in From::from().
         unsafe {
             (
-                &mut *(first as *mut _ as *mut _),
-                &mut *(second as *mut _ as *mut _),
+                std::slice::from_raw_parts_mut(self.0.first_ptr, self.0.first_len),
+                std::slice::from_raw_parts_mut(self.0.second_ptr, self.0.second_len),
             )
         }
     }
 
     /// Makes the given number of slots available for reading.
     pub fn commit(self, n: usize) {
-        // Safety: All slots have been initialized in as_mut_slices() and there are no destructors.
+        // Safety: All slots have been initialized in From::from() and there are no destructors.
         unsafe { self.0.commit(n) }
+    }
+
+    /// Makes the iterated slots available for reading.
+    pub fn commit_iterated(self) {
+        // Safety: All slots have been initialized in From::from() and there are no destructors.
+        unsafe { self.0.commit_iterated() }
     }
 
     /// Makes the whole chunk available for reading.
     pub fn commit_all(self) {
-        // Safety: All slots have been initialized in as_mut_slices().
+        // Safety: All slots have been initialized in From::from().
         unsafe { self.0.commit_all() }
     }
 
@@ -776,11 +829,40 @@ where
     }
 }
 
+impl<'a, T> Iterator for WriteChunk<'a, T>
+where
+    T: Copy + Default,
+{
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|item| {
+            // Safety: All slots have been initialized in From::from().
+            unsafe { &mut *item.as_mut_ptr() }
+        })
+    }
+}
+
 /// Structure for writing into multiple (possibly uninitialized) slots in one go.
 ///
 /// This is returned from [`Producer::write_chunk_maybe_uninit()`].
 ///
 /// For a safe alternative that only provides initialized slots, see [`WriteChunk`].
+///
+/// The slots can be accessed with
+/// [`as_mut_slices()`](WriteChunkMaybeUninit::as_mut_slices)
+/// or by iteration, which yields mutable references to possibly uninitialized data
+/// (in other words: `&mut MaybeUninit<T>`).
+/// A mutable reference (`&mut`) to the `WriteChunkMaybeUninit`
+/// should be used to iterate over it.
+/// Each slot can only be iterated once and the number of iterations is tracked.
+///
+/// After writing, the provided slots are *not* automatically made available
+/// to be read by the [`Consumer`].
+/// If desired, this has to be explicitly done by calling
+/// [`commit()`](WriteChunkMaybeUninit::commit),
+/// [`commit_iterated()`](WriteChunkMaybeUninit::commit_iterated) or
+/// [`commit_all()`](WriteChunkMaybeUninit::commit_all).
 #[derive(Debug)]
 pub struct WriteChunkMaybeUninit<'a, T> {
     first_ptr: *mut T,
@@ -788,6 +870,7 @@ pub struct WriteChunkMaybeUninit<'a, T> {
     second_ptr: *mut T,
     second_len: usize,
     producer: &'a Producer<T>,
+    iterated: usize,
 }
 
 impl<T> WriteChunkMaybeUninit<'_, T> {
@@ -816,6 +899,16 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
         self.producer.tail.set(tail);
     }
 
+    /// Makes the iterated slots available for reading.
+    ///
+    /// # Safety
+    ///
+    /// The user must make sure that all iterated elements have been initialized.
+    pub unsafe fn commit_iterated(self) {
+        let slots = self.iterated;
+        self.commit(slots)
+    }
+
     /// Makes the whole chunk available for reading.
     ///
     /// # Safety
@@ -837,9 +930,37 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     }
 }
 
+impl<'a, T> Iterator for WriteChunkMaybeUninit<'a, T> {
+    type Item = &'a mut MaybeUninit<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = if self.iterated < self.first_len {
+            unsafe { self.first_ptr.add(self.iterated) }
+        } else if self.iterated < self.first_len + self.second_len {
+            unsafe { self.second_ptr.add(self.iterated - self.first_len) }
+        } else {
+            return None;
+        };
+        self.iterated += 1;
+        Some(unsafe { &mut *(ptr as *mut _) })
+    }
+}
+
 /// Structure for reading from multiple slots in one go.
 ///
 /// This is returned from [`Consumer::read_chunk()`].
+///
+/// The slots can be accessed with [`as_slices()`](ReadChunk::as_slices)
+/// or by iteration.
+/// Even though iterating yields immutable references (`&T`),
+/// a mutable reference (`&mut`) to the `ReadChunk` should be used to iterate over it.
+/// Each slot can only be iterated once and the number of iterations is tracked.
+///
+/// After reading, the provided slots are *not* automatically made available
+/// to be written again by the [`Producer`].
+/// If desired, this has to be explicitly done by calling [`commit()`](ReadChunk::commit),
+/// [`commit_iterated()`](ReadChunk::commit_iterated) or [`commit_all()`](ReadChunk::commit_all).
+/// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
 #[derive(Debug)]
 pub struct ReadChunk<'a, T> {
     first_ptr: *const T,
@@ -847,6 +968,7 @@ pub struct ReadChunk<'a, T> {
     second_ptr: *const T,
     second_len: usize,
     consumer: &'a mut Consumer<T>,
+    iterated: usize,
 }
 
 impl<T> ReadChunk<'_, T> {
@@ -884,6 +1006,12 @@ impl<T> ReadChunk<'_, T> {
         self.consumer.head.set(head);
     }
 
+    /// Drops all slots that have been iterated, making the space available for writing again.
+    pub fn commit_iterated(self) {
+        let slots = self.iterated;
+        self.commit(slots)
+    }
+
     /// Drops all slots of the chunk, making the space available for writing again.
     pub fn commit_all(self) {
         let slots = self.len();
@@ -898,6 +1026,22 @@ impl<T> ReadChunk<'_, T> {
     /// Returns `true` if the chunk contains no slots.
     pub fn is_empty(&self) -> bool {
         self.first_len == 0
+    }
+}
+
+impl<'a, T> Iterator for ReadChunk<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ptr = if self.iterated < self.first_len {
+            unsafe { self.first_ptr.add(self.iterated) }
+        } else if self.iterated < self.first_len + self.second_len {
+            unsafe { self.second_ptr.add(self.iterated - self.first_len) }
+        } else {
+            return None;
+        };
+        self.iterated += 1;
+        Some(unsafe { &*ptr })
     }
 }
 
