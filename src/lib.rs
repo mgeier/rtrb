@@ -4,8 +4,13 @@
 //! a [`Producer`] for writing into the ring buffer and
 //! a [`Consumer`] for reading from the ring buffer.
 //!
-//! Reading from and writing into the ring buffer is lock-free and wait-free.
+//! A fixed-capacity buffer is allocated on construction.
+//! After that, no more memory is allocated (unless the type `T` does that internally).
+//! Reading from and writing into the ring buffer is *lock-free* and *wait-free*.
 //! All reading and writing functions return immediately.
+//! Attempts to write to a full buffer return an error;
+//! values inside the buffer are *not* overwritten.
+//! Attempts to read from an empty buffer return an error as well.
 //! Only a single thread can write into the ring buffer and a single thread
 //! (typically a different one) can read from the ring buffer.
 //! If the queue is empty, there is no way for the reading thread to wait
