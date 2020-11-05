@@ -1,10 +1,36 @@
 Real-Time Ring Buffer
 =====================
 
-Ripped off of https://github.com/crossbeam-rs/crossbeam/pull/338,
+Package on https://crates.io/ and documentation on https://docs.rs/ coming soon!
+
+
+Development
+-----------
+
+Running the tests:
+
+    cargo test
+
+Testing the benchmarks (without actually benchmarking):
+
+    cargo test --benches
+
+Running the benchmarks (using the [criterion](https://docs.rs/criterion/) crate):
+
+    cargo bench
+
+Creating the HTML docs (using `nightly` Rust to enable intra-doc links):
+
+    cargo +nightly doc
+
+
+Origin Story
+------------
+
+The initial code has been ripped off of https://github.com/crossbeam-rs/crossbeam/pull/338,
 with permission of the PR author [@stjepang](https://github.com/stjepang).
 
-Isolated from the rest of `crossbeam` with [git-filter-repo]:
+It has been isolated from the rest of `crossbeam` with [git-filter-repo]:
 
     git-filter-repo --subdirectory-filter crossbeam-queue --path src/spsc.rs --path tests/spsc.rs --refs refs/heads/spsc
 
