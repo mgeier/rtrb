@@ -24,6 +24,14 @@ Creating the HTML docs (using `nightly` Rust to enable intra-doc links):
     cargo +nightly doc
 
 
+Minimum Supported `rustc` Version
+---------------------------------
+
+This crate's minimum supported `rustc` version (MSRV) is `1.36.0`.
+The MSRV is not expected to be updated frequently, but if it is,
+there will be (at least) a *minor* version bump.
+
+
 Origin Story
 ------------
 
