@@ -151,6 +151,7 @@ impl<T> RingBuffer<T> {
 
     /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
     fn collapse_position(&self, pos: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity);
         if pos < self.capacity {
             pos
         } else {
@@ -160,15 +161,16 @@ impl<T> RingBuffer<T> {
 
     /// Returns a pointer to the slot at position `pos`.
     ///
-    /// The position must be in range `0 .. 2 * capacity`.
+    /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity);
         self.data_ptr.add(self.collapse_position(pos))
     }
 
     /// Increments a position by going `n` slots forward.
-    ///
-    /// The position must be in range `0 .. 2 * capacity`.
     fn increment(&self, pos: usize, n: usize) -> usize {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity);
+        debug_assert!(n <= self.capacity);
         let threshold = 2 * self.capacity - n;
         if pos < threshold {
             pos + n
@@ -180,9 +182,9 @@ impl<T> RingBuffer<T> {
     /// Increments a position by going one slot forward.
     ///
     /// This is more efficient than self.increment(..., 1).
-    ///
-    /// The position must be in range `0 .. 2 * capacity`.
     fn increment1(&self, pos: usize) -> usize {
+        debug_assert_ne!(self.capacity, 0);
+        debug_assert!(pos < 2 * self.capacity);
         if pos < 2 * self.capacity - 1 {
             pos + 1
         } else {
@@ -191,9 +193,9 @@ impl<T> RingBuffer<T> {
     }
 
     /// Returns the distance between two positions.
-    ///
-    /// Positions must be in range `0 .. 2 * capacity`.
     fn distance(&self, a: usize, b: usize) -> usize {
+        debug_assert!(a == 0 || a < 2 * self.capacity);
+        debug_assert!(b == 0 || b < 2 * self.capacity);
         if a <= b {
             b - a
         } else {
@@ -428,7 +430,7 @@ impl<T> Producer<T> {
 
     /// Get the tail position for writing the next slot, if available.
     ///
-    /// This is a strict subset of the functionality implemented in write_chunk().
+    /// This is a strict subset of the functionality implemented in write_chunk_maybe_uninit().
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
         let tail = self.tail.get();
