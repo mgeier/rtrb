@@ -34,6 +34,26 @@ jobs:
         run: |
           cargo test --benches
 
+  msrv:
+    strategy:
+      matrix:
+        rust-version: [1.36.0]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust version ${{ matrix.rust-version }}
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust-version }}
+          override: true
+      - name: Build library
+        run: |
+          cargo build --all-features
+
   check-code:
     runs-on: ubuntu-latest
     steps:
