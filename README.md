@@ -37,6 +37,31 @@ It has been isolated from the rest of `crossbeam` with [git-filter-repo]:
 [git-filter-repo]: https://github.com/newren/git-filter-repo
 
 
+Alternatives
+------------
+
+If you don't like this crate, no problem, there are several alternatives for you to choose from.
+There are many varieties of ring buffers available, here we limit the selection
+to wait-free SPSC implementations:
+
+* [fdringbuf](https://crates.io/crates/fdringbuf) (see `fdringbuf::ringbuf` module)
+* [jack](https://crates.io/crates/jack) (FFI bindings for JACK, see `jack::Ringbuffer`)
+* [npnc](https://crates.io/crates/npnc) (see `npnc::bounded::spsc` module)
+* [ringbuf](https://crates.io/crates/ringbuf)
+* [spsc-bounded-queue](https://crates.io/crates/spsc-bounded-queue)
+
+There are also implementations in other languages:
+
+* [boost::lockfree::spsc_queue](https://www.boost.org/doc/libs/master/doc/html/boost/lockfree/spsc_queue.html) (C++)
+* [JACK ring buffer](https://jackaudio.org/api/ringbuffer_8h.html)  (C)
+* [PortAudio ring buffer](http://portaudio.com/docs/v19-doxydocs-dev/pa__ringbuffer_8h.html) (C)
+* [readerwriterqueue](https://github.com/cameron314/readerwriterqueue) (C++)
+* [SPSCQueue](https://github.com/rigtorp/SPSCQueue) (C++)
+
+If you know more alternatives for this list,
+please [open an issue](https://github.com/mgeier/rtrb/issues).
+
+
 License
 -------
 
