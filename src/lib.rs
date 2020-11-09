@@ -21,18 +21,18 @@
 //! # Examples
 //!
 //! ```
-//! use rtrb::RingBuffer;
+//! use rtrb::{RingBuffer, PushError, PopError};
 //!
 //! let (mut producer, mut consumer) = RingBuffer::new(2).split();
 //!
-//! assert!(producer.push(1).is_ok());
-//! assert!(producer.push(2).is_ok());
-//! assert!(producer.push(3).is_err());
+//! assert_eq!(producer.push(1), Ok(()));
+//! assert_eq!(producer.push(2), Ok(()));
+//! assert_eq!(producer.push(3), Err(PushError::Full(3)));
 //!
 //! std::thread::spawn(move || {
 //!     assert_eq!(consumer.pop(), Ok(1));
 //!     assert_eq!(consumer.pop(), Ok(2));
-//!     assert!(consumer.pop().is_err());
+//!     assert_eq!(consumer.pop(), Err(PopError::Empty));
 //! }).join().unwrap();
 //!
 //! ```
@@ -99,7 +99,7 @@ impl<T> RingBuffer<T> {
     /// use rtrb::RingBuffer;
     ///
     /// let (mut producer, consumer) = RingBuffer::new(100).split();
-    /// assert!(producer.push(0.0f32).is_ok());
+    /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
     pub fn new(capacity: usize) -> RingBuffer<T> {
         RingBuffer {
@@ -316,7 +316,7 @@ impl<T> Producer<T> {
     ///
     /// let (mut p, mut c) = RingBuffer::new(3).split();
     ///
-    /// assert!(p.push(10).is_ok());
+    /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
     ///
     /// if let Ok(mut chunk) = p.write_chunk(3) {
