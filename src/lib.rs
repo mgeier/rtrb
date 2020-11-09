@@ -592,7 +592,7 @@ impl<T> Consumer<T> {
     /// let (mut p, mut c) = RingBuffer::new(3).split();
     ///
     /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.read_chunk(2).unwrap_err(), ChunkError::TooFewSlots(1));
+    /// assert_eq!(c.read_chunk(2), Err(ChunkError::TooFewSlots(1)));
     /// assert_eq!(p.push(20), Ok(()));
     ///
     /// if let Ok(chunk) = c.read_chunk(2) {
@@ -604,7 +604,7 @@ impl<T> Consumer<T> {
     ///     unreachable!();
     /// }
     ///
-    /// assert_eq!(c.read_chunk(2).unwrap_err(), ChunkError::TooFewSlots(0));
+    /// assert_eq!(c.read_chunk(2), Err(ChunkError::TooFewSlots(0)));
     /// assert_eq!(p.push(30), Ok(()));
     /// assert_eq!(p.push(40), Ok(()));
     ///
