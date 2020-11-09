@@ -7,6 +7,7 @@ authors = [
 ]
 repository = "https://github.com/mgeier/rtrb"
 description = "A realtime-safe single-producer single-consumer ring buffer"
+readme = "README.md"
 categories = ["concurrency", "data-structures"]
 keywords = ["lock-free", "wait-free", "spsc", "queue"]
 license = "MIT OR Apache-2.0"
