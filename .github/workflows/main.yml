@@ -50,9 +50,9 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.rust-version }}
           override: true
-      - name: Build library
+      - name: Check whether it compiles
         run: |
-          cargo build --all-features
+          cargo check --all-features
 
   check-code:
     runs-on: ubuntu-latest
