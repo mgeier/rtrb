@@ -38,7 +38,6 @@
 //! ```
 
 #![warn(rust_2018_idioms)]
-#![warn(single_use_lifetimes)]
 #![deny(missing_docs)]
 
 use std::cell::Cell;
@@ -224,6 +223,29 @@ impl<T> Drop for RingBuffer<T> {
         }
     }
 }
+
+impl<T> PartialEq for RingBuffer<T> {
+    /// This method tests for `self` and `other` values to be equal, and is used by `==`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (p, c) = RingBuffer::<f32>::new(1000).split();
+    /// assert_eq!(p.buffer, c.buffer);
+    ///
+    /// let rb1 = RingBuffer::<f32>::new(1000);
+    /// let rb2 = RingBuffer::<f32>::new(1000);
+    /// assert_ne!(rb1, rb2);
+    /// ```
+    fn eq(&self, other: &Self) -> bool {
+        // There can never be multiple instances with the same `data_ptr`.
+        std::ptr::eq(self.data_ptr, other.data_ptr)
+    }
+}
+
+impl<T> Eq for RingBuffer<T> {}
 
 /// The producer side of a [`RingBuffer`].
 ///
@@ -466,7 +488,7 @@ impl<T> Producer<T> {
 ///
 /// let (producer, consumer) = RingBuffer::<f32>::new(1000).split();
 /// ```
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
     /// A read-only reference to the ring buffer.
     pub buffer: Arc<RingBuffer<T>>,
@@ -981,7 +1003,7 @@ impl<'a, T> Iterator for WriteChunkMaybeUninit<'a, T> {
 /// If desired, this has to be explicitly done by calling [`commit()`](ReadChunk::commit),
 /// [`commit_iterated()`](ReadChunk::commit_iterated) or [`commit_all()`](ReadChunk::commit_all).
 /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReadChunk<'a, T> {
     first_ptr: *const T,
     first_len: usize,
