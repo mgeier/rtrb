@@ -1097,23 +1097,25 @@ impl<'a, T> Iterator for ReadChunk<'a, T> {
 }
 
 impl std::io::Write for Producer<u8> {
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        use ChunkError::TooFewSlots;
         let mut chunk = match self.write_chunk_maybe_uninit(buf.len()) {
-            Err(ChunkError::TooFewSlots(n)) if n > 0 => self.write_chunk_maybe_uninit(n),
-            x => x,
-        }
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::WouldBlock, e))?;
+            Ok(chunk) => chunk,
+            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
+            Err(TooFewSlots(n)) => self.write_chunk_maybe_uninit(n).unwrap(),
+        };
         let end = chunk.len();
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
         // Safety: All slots will be initialized
         unsafe {
-            std::ptr::copy_nonoverlapping(buf.as_ptr(), first.as_mut_ptr() as *mut _, mid);
-            std::ptr::copy_nonoverlapping(
-                buf.as_ptr().add(mid),
-                second.as_mut_ptr() as *mut _,
-                end - mid,
-            );
+            // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+            buf.as_ptr()
+                .copy_to_nonoverlapping(first.as_mut_ptr() as *mut _, mid);
+            buf.as_ptr()
+                .add(mid)
+                .copy_to_nonoverlapping(second.as_mut_ptr() as *mut _, end - mid);
             chunk.commit_all();
         }
         Ok(end)
@@ -1126,15 +1128,18 @@ impl std::io::Write for Producer<u8> {
 }
 
 impl std::io::Read for Consumer<u8> {
+    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use ChunkError::TooFewSlots;
         let chunk = match self.read_chunk(buf.len()) {
-            Err(ChunkError::TooFewSlots(n)) if n > 0 => self.read_chunk(n),
-            x => x,
-        }
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::WouldBlock, e))?;
+            Ok(chunk) => chunk,
+            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
+            Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
+        };
         let (first, second) = chunk.as_slices();
         let mid = first.len();
         let end = chunk.len();
+        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
         buf[..mid].copy_from_slice(first);
         buf[mid..end].copy_from_slice(second);
         chunk.commit_all();
