@@ -12,7 +12,7 @@ pub fn iterators(criterion: &mut criterion::Criterion) {
                 for elem in &mut chunk {
                     assert_eq!(*elem, black_box(i));
                 }
-                chunk.commit_iterated()
+                chunk.commit_iterated();
             } else {
                 unreachable!();
             }
