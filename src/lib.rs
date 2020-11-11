@@ -911,6 +911,8 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
+    ///
+    /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         unsafe {
             (
@@ -986,6 +988,39 @@ impl<'a, T> Iterator for WriteChunkMaybeUninit<'a, T> {
         };
         self.iterated += 1;
         Some(unsafe { &mut *(ptr as *mut _) })
+    }
+}
+
+/// Extension trait used to provide a [`copy_to_uninit()`](CopyToUninit::copy_to_uninit)
+/// method on built-in slices.
+///
+/// This can be used to safely copy data to the slices returned from
+/// [`WriteChunkMaybeUninit::as_mut_slices()`].
+///
+/// To use this, the trait has to be brought into scope, e.g. with:
+///
+/// ```
+/// use rtrb::CopyToUninit;
+/// ```
+pub trait CopyToUninit<T: Copy> {
+    /// Copies contents to a possibly uninitialized slice.
+    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]);
+}
+
+impl<T: Copy> CopyToUninit<T> for [T] {
+    /// Copies contents to a possibly uninitialized slice.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the two slices have different lengths.
+    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) {
+        assert_eq!(
+            self.len(),
+            dst.len(),
+            "source slice length does not match destination slice length"
+        );
+        let dst_ptr = dst.as_mut_ptr() as *mut _;
+        unsafe { self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len()) };
     }
 }
 
@@ -1108,14 +1143,11 @@ impl std::io::Write for Producer<u8> {
         let end = chunk.len();
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
-        // Safety: All slots will be initialized
+        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+        buf[..mid].copy_to_uninit(first);
+        buf[mid..end].copy_to_uninit(second);
+        // Safety: All slots have been initialized
         unsafe {
-            // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-            buf.as_ptr()
-                .copy_to_nonoverlapping(first.as_mut_ptr() as *mut _, mid);
-            buf.as_ptr()
-                .add(mid)
-                .copy_to_nonoverlapping(second.as_mut_ptr() as *mut _, end - mid);
             chunk.commit_all();
         }
         Ok(end)
