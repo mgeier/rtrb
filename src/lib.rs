@@ -233,10 +233,13 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    /// Creates a [`RingBuffer`] with the given capacity.
+    /// Creates a `RingBuffer` with the given `capacity`.
     ///
-    /// The returned [`RingBuffer`] is typically immediately split into
-    /// the [`Producer`] and the [`Consumer`] side by [`RingBuffer::split()`].
+    /// The returned `RingBuffer` is typically immediately split into
+    /// the [`Producer`] and the [`Consumer`] side by [`split()`](RingBuffer::split).
+    ///
+    /// If you want guaranteed wrap-around behavior,
+    /// use [`with_chunks()`](RingBuffer::with_chunks).
     ///
     /// # Examples
     ///
@@ -265,7 +268,25 @@ impl<T> RingBuffer<T> {
         }
     }
 
-    /// Splits the [`RingBuffer`] into [`Producer`] and [`Consumer`].
+    /// Creates a `RingBuffer` with a capacity of `chunks * chunk_size`.
+    ///
+    /// On top of multiplying the two numbers for us,
+    /// this also guarantees that the ring buffer wrap-around happens
+    /// at an integer multiple of `chunk_size`.
+    /// This means that if [`Consumer::read_chunk()`] is used *exclusively* with
+    /// `chunk_size` (and [`Consumer::pop()`] is *not* used in-between),
+    /// the first slice returned from [`ReadChunk::as_slices()`]
+    /// will always contain the entire chunk and the second slice will always be empty.
+    /// Same for [`Producer::write_chunk()`]/[`WriteChunk::as_mut_slices()`] and
+    /// [`Producer::write_chunk_maybe_uninit()`]/[`WriteChunkMaybeUninit::as_mut_slices()`]
+    /// (as long as [`Producer::push()`] is *not* used in-between).
+    pub fn with_chunks(chunks: usize, chunk_size: usize) -> RingBuffer<T> {
+        // NB: Currently, there is nothing special to do here, but in the future
+        //     it might be necessary to take some steps to guarantee the promised behavior.
+        Self::new(chunks * chunk_size)
+    }
+
+    /// Splits the `RingBuffer` into [`Producer`] and [`Consumer`].
     ///
     /// # Examples
     ///
@@ -970,10 +991,13 @@ where
 {
     /// Returns two slices for writing to the requested slots.
     ///
+    /// All slots are initially filled with their [`Default`] value.
+    ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
     ///
-    /// All slots are initially filled with their [`Default`] value.
+    /// See [`RingBuffer::with_chunks()`] for a way to make sure
+    /// that the second slice is always empty.
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         // Safety: All slots have been initialized in From::from().
         unsafe {
@@ -1066,6 +1090,9 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
+    ///
+    /// See [`RingBuffer::with_chunks()`] for a way to make sure
+    /// that the second slice is always empty.
     ///
     /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
@@ -1209,6 +1236,9 @@ impl<T> ReadChunk<'_, T> {
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
+    ///
+    /// See [`RingBuffer::with_chunks()`] for a way to make sure
+    /// that the second slice is always empty.
     pub fn as_slices(&self) -> (&[T], &[T]) {
         (
             unsafe { std::slice::from_raw_parts(self.first_ptr, self.first_len) },
