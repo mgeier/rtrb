@@ -110,7 +110,7 @@
 //! Furthermore, the examples use [`Producer::write_chunk()`],
 //! which requires the trait bounds `T: Copy + Default`.
 //! If that's too restrictive or if you want to squeeze out the last bit of performance,
-//! you can use [`Producer::write_chunk_maybe_uninit()`] instead,
+//! you can use [`Producer::write_chunk_uninit()`] instead,
 //! but this will force you to write some `unsafe` code.
 //!
 //! Copy a whole slice of items into the ring buffer, but only if space permits
@@ -278,7 +278,7 @@ impl<T> RingBuffer<T> {
     /// the first slice returned from [`ReadChunk::as_slices()`]
     /// will always contain the entire chunk and the second slice will always be empty.
     /// Same for [`Producer::write_chunk()`]/[`WriteChunk::as_mut_slices()`] and
-    /// [`Producer::write_chunk_maybe_uninit()`]/[`WriteChunkMaybeUninit::as_mut_slices()`]
+    /// [`Producer::write_chunk_uninit()`]/[`WriteChunkUninit::as_mut_slices()`]
     /// (as long as [`Producer::push()`] is *not* used in-between).
     pub fn with_chunks(chunks: usize, chunk_size: usize) -> RingBuffer<T> {
         // NB: Currently, there is nothing special to do here, but in the future
@@ -505,7 +505,7 @@ impl<T> Producer<T> {
     /// (because it implies [`!Drop`](Drop)).
     ///
     /// For an unsafe alternative that has no restrictions on `T`,
-    /// see [`Producer::write_chunk_maybe_uninit()`].
+    /// see [`Producer::write_chunk_uninit()`].
     ///
     /// # Examples
     ///
@@ -537,33 +537,30 @@ impl<T> Producer<T> {
     where
         T: Copy + Default,
     {
-        self.write_chunk_maybe_uninit(n).map(WriteChunk::from)
+        self.write_chunk_uninit(n).map(WriteChunk::from)
     }
 
-    /// Returns `n` (possibly uninitialized) slots for writing.
+    /// Returns `n` (uninitialized) slots for writing.
     ///
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`WriteChunkMaybeUninit::as_mut_slices()`].
+    /// The elements can be accessed with [`WriteChunkUninit::as_mut_slices()`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
-    /// This has to be explicitly done by calling [`WriteChunkMaybeUninit::commit()`],
-    /// [`WriteChunkMaybeUninit::commit_iterated()`] or
-    /// [`WriteChunkMaybeUninit::commit_all()`].
+    /// This has to be explicitly done by calling [`WriteChunkUninit::commit()`],
+    /// [`WriteChunkUninit::commit_iterated()`] or
+    /// [`WriteChunkUninit::commit_all()`].
     ///
     /// # Safety
     ///
     /// This function itself is safe, but accessing the returned slots might not be,
-    /// as well as invoking some methods of [`WriteChunkMaybeUninit`].
+    /// as well as invoking some methods of [`WriteChunkUninit`].
     ///
-    /// For a safe alternative that provides only initialized slots,
+    /// For a safe alternative that provides [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    pub fn write_chunk_maybe_uninit(
-        &mut self,
-        n: usize,
-    ) -> Result<WriteChunkMaybeUninit<'_, T>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -580,7 +577,7 @@ impl<T> Producer<T> {
         }
         let tail = self.buffer.collapse_position(tail);
         let first_len = n.min(self.buffer.capacity - tail);
-        Ok(WriteChunkMaybeUninit {
+        Ok(WriteChunkUninit {
             first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
             first_len,
             second_ptr: self.buffer.data_ptr,
@@ -628,7 +625,7 @@ impl<T> Producer<T> {
 
     /// Get the tail position for writing the next slot, if available.
     ///
-    /// This is a strict subset of the functionality implemented in write_chunk_maybe_uninit().
+    /// This is a strict subset of the functionality implemented in write_chunk_uninit().
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
         let tail = self.tail.get();
@@ -946,8 +943,8 @@ impl<T> Consumer<T> {
 ///
 /// This is returned from [`Producer::write_chunk()`].
 ///
-/// For an unsafe alternative that provides possibly uninitialized slots,
-/// see [`WriteChunkMaybeUninit`].
+/// For an unsafe alternative that provides uninitialized slots,
+/// see [`WriteChunkUninit`].
 ///
 /// The slots (which initially contain [`Default`] values) can be accessed with
 /// [`as_mut_slices()`](WriteChunk::as_mut_slices)
@@ -963,14 +960,14 @@ impl<T> Consumer<T> {
 /// [`commit_iterated()`](WriteChunk::commit_iterated) or
 /// [`commit_all()`](WriteChunk::commit_all).
 #[derive(Debug)]
-pub struct WriteChunk<'a, T>(WriteChunkMaybeUninit<'a, T>);
+pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
-impl<'a, T> From<WriteChunkMaybeUninit<'a, T>> for WriteChunk<'a, T>
+impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
 where
     T: Copy + Default,
 {
     /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkMaybeUninit<'a, T>) -> Self {
+    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
         for i in 0..chunk.first_len {
             unsafe {
                 chunk.first_ptr.add(i).write(Default::default());
@@ -1055,28 +1052,28 @@ where
     }
 }
 
-/// Structure for writing into multiple (possibly uninitialized) slots in one go.
+/// Structure for writing into multiple (uninitialized) slots in one go.
 ///
-/// This is returned from [`Producer::write_chunk_maybe_uninit()`].
+/// This is returned from [`Producer::write_chunk_uninit()`].
 ///
-/// For a safe alternative that only provides initialized slots, see [`WriteChunk`].
+/// For a safe alternative that provides [`Default`]-initialized slots, see [`WriteChunk`].
 ///
 /// The slots can be accessed with
-/// [`as_mut_slices()`](WriteChunkMaybeUninit::as_mut_slices)
+/// [`as_mut_slices()`](WriteChunkUninit::as_mut_slices)
 /// or by iteration, which yields mutable references to possibly uninitialized data
 /// (in other words: `&mut MaybeUninit<T>`).
-/// A mutable reference (`&mut`) to the `WriteChunkMaybeUninit`
+/// A mutable reference (`&mut`) to the `WriteChunkUninit`
 /// should be used to iterate over it.
 /// Each slot can only be iterated once and the number of iterations is tracked.
 ///
 /// After writing, the provided slots are *not* automatically made available
 /// to be read by the [`Consumer`].
 /// If desired, this has to be explicitly done by calling
-/// [`commit()`](WriteChunkMaybeUninit::commit),
-/// [`commit_iterated()`](WriteChunkMaybeUninit::commit_iterated) or
-/// [`commit_all()`](WriteChunkMaybeUninit::commit_all).
+/// [`commit()`](WriteChunkUninit::commit),
+/// [`commit_iterated()`](WriteChunkUninit::commit_iterated) or
+/// [`commit_all()`](WriteChunkUninit::commit_all).
 #[derive(Debug)]
-pub struct WriteChunkMaybeUninit<'a, T> {
+pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
     second_ptr: *mut T,
@@ -1085,7 +1082,7 @@ pub struct WriteChunkMaybeUninit<'a, T> {
     iterated: usize,
 }
 
-impl<T> WriteChunkMaybeUninit<'_, T> {
+impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -1157,7 +1154,7 @@ impl<T> WriteChunkMaybeUninit<'_, T> {
     }
 }
 
-impl<'a, T> Iterator for WriteChunkMaybeUninit<'a, T> {
+impl<'a, T> Iterator for WriteChunkUninit<'a, T> {
     type Item = &'a mut MaybeUninit<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1177,7 +1174,7 @@ impl<'a, T> Iterator for WriteChunkMaybeUninit<'a, T> {
 /// method on built-in slices.
 ///
 /// This can be used to safely copy data to the slices returned from
-/// [`WriteChunkMaybeUninit::as_mut_slices()`].
+/// [`WriteChunkUninit::as_mut_slices()`].
 ///
 /// To use this, the trait has to be brought into scope, e.g. with:
 ///
@@ -1320,10 +1317,10 @@ impl std::io::Write for Producer<u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         use ChunkError::TooFewSlots;
-        let mut chunk = match self.write_chunk_maybe_uninit(buf.len()) {
+        let mut chunk = match self.write_chunk_uninit(buf.len()) {
             Ok(chunk) => chunk,
             Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.write_chunk_maybe_uninit(n).unwrap(),
+            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
         };
         let end = chunk.len();
         let (first, second) = chunk.as_mut_slices();
@@ -1424,7 +1421,7 @@ impl<T> fmt::Display for PushError<T> {
 }
 
 /// Error type for [`Consumer::read_chunk()`], [`Producer::write_chunk()`]
-/// and [`Producer::write_chunk_maybe_uninit()`].
+/// and [`Producer::write_chunk_uninit()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ChunkError {
     /// Fewer than the requested number of slots were available.
