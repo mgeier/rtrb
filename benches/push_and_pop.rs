@@ -10,26 +10,6 @@ const MANY: usize = 2_000_000;
 const SLEEPTIME: Duration = Duration::from_millis(3);
 
 pub fn push_and_pop(criterion: &mut criterion::Criterion) {
-    criterion.bench_function("push-pop Vec", |b| {
-        let mut v = Vec::<u8>::with_capacity(1);
-        let mut i = 0;
-        b.iter(|| {
-            v.push(black_box(i));
-            assert_eq!(v.pop(), black_box(Some(i)));
-            i = i.wrapping_add(black_box(1));
-        })
-    });
-
-    criterion.bench_function("push-pop RingBuffer", |b| {
-        let (mut p, mut c) = RingBuffer::<u8>::new(1).split();
-        let mut i = 0;
-        b.iter(|| {
-            p.push(black_box(i)).unwrap();
-            assert_eq!(c.pop(), black_box(Ok(i)));
-            i = i.wrapping_add(black_box(1));
-        })
-    });
-
     criterion.bench_function("push-pop via thread", |b| {
         let (mut p1, mut c1) = RingBuffer::<u8>::new(1).split();
         let (mut p2, mut c2) = RingBuffer::<u8>::new(1).split();

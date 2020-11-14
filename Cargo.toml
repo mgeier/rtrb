@@ -28,13 +28,5 @@ name = "push_and_pop"
 harness = false
 
 [[bench]]
-name = "slices"
-harness = false
-
-[[bench]]
-name = "write_and_read"
-harness = false
-
-[[bench]]
-name = "iterators"
+name = "single_thread_single_byte"
 harness = false
