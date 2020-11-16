@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 
 use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::{CopyToUninit, RingBuffer};
 
@@ -38,6 +39,7 @@ where
 pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     let mut group = criterion.benchmark_group("single-thread-two-bytes");
     group.throughput(criterion::Throughput::Bytes(2));
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
     let (mut p, mut c) = RingBuffer::<u8>::new(3).split();
 

@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::mem::MaybeUninit;
 
 use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::RingBuffer;
 
@@ -27,6 +28,7 @@ where
 pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     let mut group = criterion.benchmark_group("single-thread-single-byte");
     group.throughput(criterion::Throughput::Bytes(1));
+    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
     let mut v = Vec::<u8>::with_capacity(1);
     add_function(&mut group, "0-vec", |i| {
