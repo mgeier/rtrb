@@ -1,4 +1,4 @@
-//! Single-threaded benchmarks, pushing and popping a single byte using a single element queue.
+//! Single-threaded benchmarks, pushing and popping a single byte using a single-element queue.
 //!
 //! This is *not* a typical use case but it should nevertheless be useful
 //! for comparing the overhead of different methods.

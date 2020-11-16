@@ -30,3 +30,7 @@ harness = false
 [[bench]]
 name = "single_thread_single_byte"
 harness = false
+
+[[bench]]
+name = "single_thread_two_bytes"
+harness = false
