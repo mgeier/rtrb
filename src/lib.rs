@@ -554,7 +554,8 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`WriteChunk::as_mut_slices()`].
+    /// The elements can be accessed with [`WriteChunk::as_mut_slices()`] or
+    /// by iterating over (a `&mut` to) the [`WriteChunk`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
@@ -606,7 +607,8 @@ impl<T> Producer<T> {
     /// If not enough slots are available, an error
     /// (containing the number of available slots) is returned.
     ///
-    /// The elements can be accessed with [`WriteChunkUninit::as_mut_slices()`].
+    /// The elements can be accessed with [`WriteChunkUninit::as_mut_slices()`] or
+    /// by iterating over (a `&mut` to) the [`WriteChunkUninit`].
     ///
     /// The provided slots are *not* automatically made available
     /// to be read by the [`Consumer`].
