@@ -571,30 +571,7 @@ impl<T> Producer<T> {
     ///
     /// # Examples
     ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (mut p, mut c) = RingBuffer::new(3).split();
-    ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.pop(), Ok(10));
-    ///
-    /// if let Ok(mut chunk) = p.write_chunk(3) {
-    ///     let (first, second) = chunk.as_mut_slices();
-    ///     assert_eq!(first.len(), 2);
-    ///     first[0] = 20;
-    ///     first[1] += 30; // Default value is 0
-    ///     assert_eq!(second.len(), 1);
-    ///     second[0] = 40;
-    ///     chunk.commit_all(); // Make written items available for reading
-    /// } else {
-    ///     unreachable!();
-    /// }
-    ///
-    /// assert_eq!(c.pop(), Ok(20));
-    /// assert_eq!(c.pop(), Ok(30));
-    /// assert_eq!(c.pop(), Ok(40));
-    /// ```
+    /// See the [crate-level documentation](crate#examples) for examples.
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Copy + Default,
@@ -822,53 +799,6 @@ impl<T> Consumer<T> {
     ///
     /// # Examples
     ///
-    /// ```
-    /// use rtrb::{RingBuffer, ChunkError};
-    ///
-    /// let (mut p, mut c) = RingBuffer::new(3).split();
-    ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.read_chunk(2), Err(ChunkError::TooFewSlots(1)));
-    /// assert_eq!(p.push(20), Ok(()));
-    ///
-    /// if let Ok(chunk) = c.read_chunk(2) {
-    ///     let (first, second) = chunk.as_slices();
-    ///     assert_eq!(first, &[10, 20]);
-    ///     assert_eq!(second, &[]);
-    ///     chunk.commit_all(); // Make the whole chunk available for writing again
-    /// } else {
-    ///     unreachable!();
-    /// }
-    ///
-    /// assert_eq!(c.read_chunk(2), Err(ChunkError::TooFewSlots(0)));
-    /// assert_eq!(p.push(30), Ok(()));
-    /// assert_eq!(p.push(40), Ok(()));
-    ///
-    /// if let Ok(chunk) = c.read_chunk(2) {
-    ///     let (first, second) = chunk.as_slices();
-    ///     assert_eq!(first, &[30]);
-    ///     assert_eq!(second, &[40]);
-    ///     chunk.commit(1); // Only one slot is made available for writing ...
-    /// } else {
-    ///     unreachable!();
-    /// };
-    /// // ... which means the last element is still in the queue:
-    /// assert_eq!(c.pop(), Ok(40));
-    ///
-    /// assert_eq!(p.push(50), Ok(()));
-    /// assert_eq!(p.push(60), Ok(()));
-    /// assert_eq!(p.push(70), Ok(()));
-    /// if let Ok(mut chunk) = c.read_chunk(3) {
-    ///     // Use &mut to iterate
-    ///     let v: Vec<_> = (&mut chunk).collect();
-    ///     assert_eq!(v, &[&50, &60, &70]);
-    ///     chunk.commit_iterated(); // Make iterated items available for writing
-    /// } else {
-    ///     unreachable!();
-    /// }
-    /// assert!(c.is_empty());
-    /// ```
-    ///
     /// Items are dropped when [`ReadChunk::commit()`], [`ReadChunk::commit_iterated()`]
     /// or [`ReadChunk::commit_all()`] is called
     /// (which is only relevant if `T` implements [`Drop`]).
@@ -916,6 +846,8 @@ impl<T> Consumer<T> {
     /// // ... and it is dropped when the ring buffer goes out of scope:
     /// assert_eq!(unsafe { DROP_COUNT }, 3);
     /// ```
+    ///
+    /// See the [crate-level documentation](crate#examples) for more examples.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.head.get();
 
