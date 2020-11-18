@@ -15,11 +15,13 @@ Testing the benchmarks (without actually benchmarking):
 
     cargo test --benches
 
-Running the benchmarks (using the [criterion](https://docs.rs/criterion/) crate):
+Running the benchmarks (using the [criterion](https://docs.rs/criterion/) crate;
+results will be available in `target/criterion/report/index.html`):
 
     cargo bench
 
-Creating the HTML docs (using `nightly` Rust to enable intra-doc links):
+Creating the HTML docs (using `nightly` Rust to enable intra-doc links;
+docs will be available in `target/doc/rtrb/index.html`):
 
     cargo +nightly doc
 
