@@ -344,7 +344,7 @@ impl<T> RingBuffer<T> {
     /// RingBuffer::reset(&mut p, &mut c);
     ///
     /// // The full capacity is now available for writing:
-    /// if let Ok(mut chunk) = p.write_chunk(p.buffer.capacity()) {
+    /// if let Ok(mut chunk) = p.write_chunk(p.buffer().capacity()) {
     ///     let (first, second) = chunk.as_mut_slices();
     ///     // The first slice is now guaranteed to span the whole buffer:
     ///     first[0] = 20;
@@ -470,7 +470,7 @@ impl<T> PartialEq for RingBuffer<T> {
     /// use rtrb::RingBuffer;
     ///
     /// let (p, c) = RingBuffer::<f32>::new(1000).split();
-    /// assert_eq!(p.buffer, c.buffer);
+    /// assert_eq!(p.buffer(), c.buffer());
     ///
     /// let rb1 = RingBuffer::<f32>::new(1000);
     /// let rb2 = RingBuffer::<f32>::new(1000);
@@ -502,8 +502,8 @@ impl<T> Eq for RingBuffer<T> {}
 /// ```
 #[derive(Debug)]
 pub struct Producer<T> {
-    /// A read-only reference to the ring buffer.
-    pub buffer: Arc<RingBuffer<T>>,
+    /// A reference to the ring buffer.
+    buffer: Arc<RingBuffer<T>>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -663,6 +663,11 @@ impl<T> Producer<T> {
         self.next_tail().is_none()
     }
 
+    /// Returns a read-only reference to the ring buffer.
+    pub fn buffer(&self) -> &RingBuffer<T> {
+        &self.buffer
+    }
+
     /// Get the tail position for writing the next slot, if available.
     ///
     /// This is a strict subset of the functionality implemented in write_chunk_uninit().
@@ -703,8 +708,8 @@ impl<T> Producer<T> {
 /// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
-    /// A read-only reference to the ring buffer.
-    pub buffer: Arc<RingBuffer<T>>,
+    /// A reference to the ring buffer.
+    buffer: Arc<RingBuffer<T>>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -910,6 +915,11 @@ impl<T> Consumer<T> {
     /// ```
     pub fn is_empty(&self) -> bool {
         self.next_head().is_none()
+    }
+
+    /// Returns a read-only reference to the ring buffer.
+    pub fn buffer(&self) -> &RingBuffer<T> {
+        &self.buffer
     }
 
     /// Get the head position for reading the next slot, if available.

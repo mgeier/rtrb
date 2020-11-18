@@ -20,8 +20,8 @@ fn smoke() {
 fn capacity() {
     for i in 1..10 {
         let (p, c) = RingBuffer::<i32>::new(i).split();
-        assert_eq!(p.buffer.capacity(), i);
-        assert_eq!(c.buffer.capacity(), i);
+        assert_eq!(p.buffer().capacity(), i);
+        assert_eq!(c.buffer().capacity(), i);
     }
 }
 
@@ -66,7 +66,7 @@ fn zero_sized_type() {
     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
 
     let (mut p, mut c) = RingBuffer::new(1).split();
-    assert_eq!(p.buffer.capacity(), 1);
+    assert_eq!(p.buffer().capacity(), 1);
     assert_eq!(p.slots(), 1);
     assert_eq!(c.slots(), 0);
     assert!(p.push(ZeroSized).is_ok());
