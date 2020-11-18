@@ -1,7 +1,21 @@
 Real-Time Ring Buffer
 =====================
 
-Package on https://crates.io/ and documentation on https://docs.rs/ coming soon!
+A wait-free single-producer single-consumer ring buffer for Rust.
+
+* Crate: https://crates.io/crates/rtrb
+* Documentation: https://docs.rs/rtrb
+
+
+Usage
+-----
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+rtrb = "0.1"
+```
 
 
 Development
