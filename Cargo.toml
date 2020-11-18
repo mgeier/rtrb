@@ -24,10 +24,6 @@ criterion = "0.3"
 bench = false # Don't disturb criterion command line parsing
 
 [[bench]]
-name = "push_and_pop"
-harness = false
-
-[[bench]]
 name = "single_thread_single_byte"
 harness = false
 
