@@ -836,9 +836,7 @@ impl<T> Consumer<T> {
     ///     assert!(p.push(Thing).is_ok()); // 3
     ///
     ///     if let Ok(chunk) = c.read_chunk(2) {
-    ///         let (first, second) = chunk.as_slices();
-    ///         assert_eq!(first.len(), 1);
-    ///         assert_eq!(second.len(), 1);
+    ///         assert_eq!(chunk.len(), 2);
     ///         assert_eq!(unsafe { DROP_COUNT }, 1);
     ///         chunk.commit(1); // Drops only one of the two Things
     ///         assert_eq!(unsafe { DROP_COUNT }, 2);
