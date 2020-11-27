@@ -34,10 +34,9 @@ results will be available in `target/criterion/report/index.html`):
 
     cargo bench
 
-Creating the HTML docs (using `nightly` Rust to enable intra-doc links;
-docs will be available in `target/doc/rtrb/index.html`):
+Creating the HTML docs (which will be available in `target/doc/rtrb/index.html`):
 
-    cargo +nightly doc
+    cargo doc
 
 
 Minimum Supported `rustc` Version
