@@ -451,7 +451,7 @@ impl<T> Drop for RingBuffer<T> {
             unsafe {
                 self.slot_ptr(head).drop_in_place();
             }
-            head = self.increment(head, 1);
+            head = self.increment1(head);
         }
 
         // Finally, deallocate the buffer, but don't run any destructors.
