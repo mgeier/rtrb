@@ -4,6 +4,11 @@ arch:
   - ppc64le
   - s390x
   - arm64
+env:
+  global:
+    - CARGO_TERM_COLOR=always
+    - RUST_BACKTRACE=1
+    - RUST_LOG=info
 cache: cargo
 script:
   - cargo test
