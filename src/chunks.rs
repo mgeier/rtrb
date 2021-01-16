@@ -467,8 +467,8 @@ impl<T> WriteChunkUninit<'_, T> {
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         unsafe {
             (
-                core::slice::from_raw_parts_mut(self.first_ptr as *mut _, self.first_len),
-                core::slice::from_raw_parts_mut(self.second_ptr as *mut _, self.second_len),
+                core::slice::from_raw_parts_mut(self.first_ptr.cast(), self.first_len),
+                core::slice::from_raw_parts_mut(self.second_ptr.cast(), self.second_len),
             )
         }
     }

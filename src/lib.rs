@@ -723,7 +723,7 @@ impl<T: Copy> CopyToUninit<T> for [T] {
             dst.len(),
             "source slice length does not match destination slice length"
         );
-        let dst_ptr = dst.as_mut_ptr() as *mut _;
+        let dst_ptr = dst.as_mut_ptr().cast();
         unsafe {
             self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len());
             core::slice::from_raw_parts_mut(dst_ptr, self.len())
