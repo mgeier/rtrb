@@ -67,7 +67,7 @@ If you don't like this crate, no problem, there are several alternatives for you
 There are many varieties of ring buffers available, here we limit the selection
 to wait-free SPSC implementations:
 
-* [fdringbuf](https://crates.io/crates/fdringbuf) (see `fdringbuf::ringbuf` module)
+* [shmem-ipc](https://crates.io/crates/shmem-ipc) (see `shmem_ipc::sharedring` and `shmem_ipc::ringbuf` modules)
 * [heapless](https://crates.io/crates/heapless) (for embedded systems, see `heapless::spsc`)
 * [jack](https://crates.io/crates/jack) (FFI bindings for JACK, see `jack::Ringbuffer`)
 * [npnc](https://crates.io/crates/npnc) (see `npnc::bounded::spsc` module)
