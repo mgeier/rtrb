@@ -195,12 +195,28 @@
 #![warn(rust_2018_idioms)]
 #![deny(missing_docs)]
 
-use std::cell::Cell;
-use std::fmt;
-use std::marker::PhantomData;
-use std::mem::{ManuallyDrop, MaybeUninit};
-use std::sync::atomic::{AtomicUsize, Ordering};
+#![cfg_attr(not(feature="std"), no_std)]
+
+#[cfg(not(feature="std"))]
+extern crate alloc;
+
+use core::cell::Cell;
+use core::fmt;
+use core::marker::PhantomData;
+use core::mem::{ManuallyDrop, MaybeUninit};
+use core::ptr;
+use core::slice;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(feature="std")]
 use std::sync::Arc;
+#[cfg(not(feature="std"))]
+use alloc::sync::Arc;
+
+#[cfg(not(feature="std"))]
+use alloc::format;
+#[cfg(not(feature="std"))]
+use alloc::vec::Vec;
 
 use cache_padded::CachePadded;
 
@@ -478,7 +494,7 @@ impl<T> PartialEq for RingBuffer<T> {
     /// ```
     fn eq(&self, other: &Self) -> bool {
         // There can never be multiple instances with the same `data_ptr`.
-        std::ptr::eq(self.data_ptr, other.data_ptr)
+        ptr::eq(self.data_ptr, other.data_ptr)
     }
 }
 
@@ -1002,8 +1018,8 @@ where
         // Safety: All slots have been initialized in From::from().
         unsafe {
             (
-                std::slice::from_raw_parts_mut(self.0.first_ptr, self.0.first_len),
-                std::slice::from_raw_parts_mut(self.0.second_ptr, self.0.second_len),
+                slice::from_raw_parts_mut(self.0.first_ptr, self.0.first_len),
+                slice::from_raw_parts_mut(self.0.second_ptr, self.0.second_len),
             )
         }
     }
@@ -1098,8 +1114,8 @@ impl<T> WriteChunkUninit<'_, T> {
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
         unsafe {
             (
-                std::slice::from_raw_parts_mut(self.first_ptr as *mut _, self.first_len),
-                std::slice::from_raw_parts_mut(self.second_ptr as *mut _, self.second_len),
+                slice::from_raw_parts_mut(self.first_ptr as *mut _, self.first_len),
+                slice::from_raw_parts_mut(self.second_ptr as *mut _, self.second_len),
             )
         }
     }
@@ -1241,8 +1257,8 @@ impl<T> ReadChunk<'_, T> {
     /// that the second slice is always empty.
     pub fn as_slices(&self) -> (&[T], &[T]) {
         (
-            unsafe { std::slice::from_raw_parts(self.first_ptr, self.first_len) },
-            unsafe { std::slice::from_raw_parts(self.second_ptr, self.second_len) },
+            unsafe { slice::from_raw_parts(self.first_ptr, self.first_len) },
+            unsafe { slice::from_raw_parts(self.second_ptr, self.second_len) },
         )
     }
 
@@ -1316,6 +1332,7 @@ impl<'a, T> Iterator for ReadChunk<'a, T> {
     }
 }
 
+#[cfg(feature="std")]
 impl std::io::Write for Producer<u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -1344,6 +1361,7 @@ impl std::io::Write for Producer<u8> {
     }
 }
 
+#[cfg(feature="std")]
 impl std::io::Read for Consumer<u8> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -1371,6 +1389,7 @@ pub enum PopError {
     Empty,
 }
 
+#[cfg(feature="std")]
 impl std::error::Error for PopError {}
 
 impl fmt::Display for PopError {
@@ -1388,6 +1407,7 @@ pub enum PeekError {
     Empty,
 }
 
+#[cfg(feature="std")]
 impl std::error::Error for PeekError {}
 
 impl fmt::Display for PeekError {
@@ -1405,6 +1425,7 @@ pub enum PushError<T> {
     Full(T),
 }
 
+#[cfg(feature="std")]
 impl<T> std::error::Error for PushError<T> {}
 
 impl<T> fmt::Debug for PushError<T> {
@@ -1433,6 +1454,7 @@ pub enum ChunkError {
     TooFewSlots(usize),
 }
 
+#[cfg(feature="std")]
 impl std::error::Error for ChunkError {}
 
 impl fmt::Display for ChunkError {

@@ -17,6 +17,10 @@ exclude = [
     ".*",
 ]
 
+[features]
+std = []
+default = ["std"]
+
 [dependencies]
 cache-padded = "1.1"
 
