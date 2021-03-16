@@ -195,9 +195,9 @@
 #![warn(rust_2018_idioms)]
 #![deny(missing_docs)]
 
-#![cfg_attr(not(feature="std"), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature="std"))]
+#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 use core::cell::Cell;
@@ -208,14 +208,14 @@ use core::ptr;
 use core::slice;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 use std::sync::Arc;
-#[cfg(not(feature="std"))]
+#[cfg(not(feature = "std"))]
 use alloc::sync::Arc;
 
-#[cfg(not(feature="std"))]
+#[cfg(not(feature = "std"))]
 use alloc::format;
-#[cfg(not(feature="std"))]
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 use cache_padded::CachePadded;
@@ -1332,7 +1332,7 @@ impl<'a, T> Iterator for ReadChunk<'a, T> {
     }
 }
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 impl std::io::Write for Producer<u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -1361,7 +1361,7 @@ impl std::io::Write for Producer<u8> {
     }
 }
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 impl std::io::Read for Consumer<u8> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -1389,7 +1389,7 @@ pub enum PopError {
     Empty,
 }
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 impl std::error::Error for PopError {}
 
 impl fmt::Display for PopError {
@@ -1407,7 +1407,7 @@ pub enum PeekError {
     Empty,
 }
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 impl std::error::Error for PeekError {}
 
 impl fmt::Display for PeekError {
@@ -1425,7 +1425,7 @@ pub enum PushError<T> {
     Full(T),
 }
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 impl<T> std::error::Error for PushError<T> {}
 
 impl<T> fmt::Debug for PushError<T> {
@@ -1454,7 +1454,7 @@ pub enum ChunkError {
     TooFewSlots(usize),
 }
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 impl std::error::Error for ChunkError {}
 
 impl fmt::Display for ChunkError {
