@@ -1,3 +1,5 @@
+#![cfg(feature = "std")]
+
 use std::io::{Read, Write};
 
 use rtrb::RingBuffer;

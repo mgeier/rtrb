@@ -6,6 +6,10 @@ A wait-free single-producer single-consumer ring buffer for Rust.
 * Crate: https://crates.io/crates/rtrb
 * Documentation: https://docs.rs/rtrb
 
+This crate can be used without the standard library (`#![no_std]`)
+by disabling the `std` feature (which is enabled by default),
+but the [alloc](https://doc.rust-lang.org/alloc/) crate is needed nevertheless.
+
 
 Usage
 -----
