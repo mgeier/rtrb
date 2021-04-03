@@ -27,9 +27,12 @@ jobs:
           profile: minimal
           toolchain: stable${{ matrix.toolchain-suffix }}
           override: true
-      - name: Run tests
+      - name: Run tests (all features)
         run: |
           cargo test --workspace --all-features
+      - name: Run tests (no features)
+        run: |
+          cargo test --workspace --no-default-features
       - name: Test benchmarks
         run: |
           cargo test --benches
@@ -80,3 +83,23 @@ jobs:
       - name: packaging
         run: |
           cargo package --verbose
+
+  no_std:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Install cargo-nono
+        run: |
+          cargo install cargo-nono
+      - name: Check no_std compatibility
+        run: |
+          cargo nono check
