@@ -1,6 +1,6 @@
 [package]
 name = "rtrb"
-version = "0.1.2"
+version = "0.1.3"
 authors = [
     "Stjepan Glavina <stjepang@gmail.com>",
     "Matthias Geier <Matthias.Geier@gmail.com>",
