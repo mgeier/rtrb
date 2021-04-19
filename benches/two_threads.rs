@@ -5,31 +5,53 @@ use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::RingBuffer;
 
-pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
-    let mut group = criterion.benchmark_group("two-threads");
+pub fn add_function<P, C, Create, Push, Pop, M>(
+    group: &mut criterion::BenchmarkGroup<M>,
+    id: &str,
+    create: Create,
+    push: Push,
+    pop: Pop,
+) where
+    P: Send + 'static,
+    C: Send + 'static,
+    Create: Fn(usize) -> (P, C) + Copy,
+    Push: Fn(&mut P, u8) -> bool + Send + Copy + 'static,
+    Pop: Fn(&mut C) -> Option<u8> + Send + Copy + 'static,
+    M: criterion::measurement::Measurement<Value = std::time::Duration>,
+{
+    // Just a quick check if the ring buffer works as expected:
+    let (mut p, mut c) = create(2);
+    assert!(pop(&mut c).is_none());
+    assert!(push(&mut p, 1));
+    assert!(push(&mut p, 2));
+    assert!(!push(&mut p, 3));
+    assert_eq!(pop(&mut c).unwrap(), 1);
+    assert_eq!(pop(&mut c).unwrap(), 2);
+    assert!(pop(&mut c).is_none());
+
     group.throughput(criterion::Throughput::Bytes(1));
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    group.bench_function("large", |b| {
+    group.bench_function(["large", id].concat(), |b| {
         b.iter_custom(|iters| {
             // Queue is so long that there is no contention between threads.
-            let (mut p, mut c) = RingBuffer::<u8>::new(2 * iters as usize).split();
+            let (mut p, mut c) = create(2 * iters as usize);
             for _ in 0..iters {
-                p.push(42).unwrap();
+                push(&mut p, 42);
             }
             let barrier = Arc::new(Barrier::new(2));
             let barrier_in_thread = Arc::clone(&barrier);
             let push_thread = std::thread::spawn(move || {
                 barrier_in_thread.wait();
                 for _ in 0..iters {
-                    p.push(black_box(42)).unwrap();
+                    push(&mut p, black_box(42));
                 }
                 barrier_in_thread.wait();
             });
             barrier.wait();
             let start = std::time::Instant::now();
             for _ in 0..iters {
-                black_box(c.pop().unwrap());
+                black_box(pop(&mut c));
             }
             barrier.wait();
             let duration = start.elapsed();
@@ -38,23 +60,23 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         });
     });
 
-    group.bench_function("small", |b| {
+    group.bench_function(["small", id].concat(), |b| {
         b.iter_custom(|iters| {
             // Queue is very short in order to force a lot of contention between threads.
-            let (mut p, mut c) = RingBuffer::<u8>::new(2).split();
+            let (mut p, mut c) = create(2);
             let barrier = Arc::new(Barrier::new(2));
             let barrier_in_thread = Arc::clone(&barrier);
             let push_thread = std::thread::spawn(move || {
                 barrier_in_thread.wait();
                 for _ in 0..iters {
-                    while p.push(black_box(42)).is_err() {}
+                    while !push(&mut p, black_box(42)) {}
                 }
                 barrier_in_thread.wait();
             });
             barrier.wait();
             let start = std::time::Instant::now();
             for _ in 0..iters {
-                while c.pop().is_err() {}
+                while pop(&mut c).is_none() {}
             }
             barrier.wait();
             let duration = start.elapsed();
@@ -62,7 +84,17 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
             duration
         });
     });
+}
 
+fn criterion_benchmark(criterion: &mut criterion::Criterion) {
+    let mut group = criterion.benchmark_group("two-threads");
+    add_function(
+        &mut group,
+        "",
+        |capacity| RingBuffer::new(capacity).split(),
+        |p, i| p.push(i).is_ok(),
+        |c| c.pop().ok(),
+    );
     group.finish();
 }
 
