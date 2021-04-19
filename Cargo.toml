@@ -44,5 +44,5 @@ name = "single_thread_with_chunks"
 harness = false
 
 [[bench]]
-name = "two_threads_single_byte"
+name = "two_threads"
 harness = false
