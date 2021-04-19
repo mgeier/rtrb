@@ -55,7 +55,7 @@ Origin Story
 ------------
 
 The initial code has been ripped off of https://github.com/crossbeam-rs/crossbeam/pull/338,
-with permission of the PR author [@stjepang](https://github.com/stjepang).
+with permission of the PR author.
 
 It has been isolated from the rest of `crossbeam` with [git-filter-repo]:
 
