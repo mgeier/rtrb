@@ -85,6 +85,7 @@ There are also implementations in other languages:
 * [JACK ring buffer](https://jackaudio.org/api/ringbuffer_8h.html)  (C)
 * [PortAudio ring buffer](http://portaudio.com/docs/v19-doxydocs-dev/pa__ringbuffer_8h.html) (C)
 * [readerwriterqueue](https://github.com/cameron314/readerwriterqueue) (C++)
+* [ringbuf.js](https://github.com/padenot/ringbuf.js) (JavaScript, using `SharedArrayBuffer`)
 * [SPSCQueue](https://github.com/rigtorp/SPSCQueue) (C++)
 
 If you know more alternatives for this list,
