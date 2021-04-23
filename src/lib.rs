@@ -497,6 +497,12 @@ impl<T> Eq for RingBuffer<T> {}
 /// Can only be created with [`RingBuffer::split()`]
 /// (together with its counterpart, the [`Consumer`]).
 ///
+/// When the `Producer` is dropped, [`Consumer::is_abandoned()`] will return `true`.
+/// This can be used as a crude way to communicate to the receiving thread
+/// that no more data will be produced.
+/// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
+/// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
+///
 /// # Examples
 ///
 /// ```
@@ -692,6 +698,26 @@ impl<T> Producer<T> {
         self.next_tail().is_none()
     }
 
+    /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, c) = RingBuffer::new(7).split();
+    /// assert!(!p.is_abandoned());
+    /// assert_eq!(p.push(10), Ok(()));
+    /// drop(c);
+    /// // The items that are still in the ring buffer are not accessible anymore.
+    /// assert!(p.is_abandoned());
+    /// // Even though it's futile, items can still be written:
+    /// assert_eq!(p.push(11), Ok(()));
+    /// ```
+    pub fn is_abandoned(&self) -> bool {
+        Arc::strong_count(&self.buffer) < 2
+    }
+
     /// Returns a read-only reference to the ring buffer.
     pub fn buffer(&self) -> &RingBuffer<T> {
         &self.buffer
@@ -727,6 +753,12 @@ impl<T> Producer<T> {
 ///
 /// Can only be created with [`RingBuffer::split()`]
 /// (together with its counterpart, the [`Producer`]).
+///
+/// When the `Consumer` is dropped, [`Producer::is_abandoned()`] will return `true`.
+/// This can be used as a crude way to communicate to the sending thread
+/// that no more data will be consumed.
+/// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
+/// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 ///
 /// # Examples
 ///
@@ -967,6 +999,25 @@ impl<T> Consumer<T> {
     /// ```
     pub fn is_empty(&self) -> bool {
         self.next_head().is_none()
+    }
+
+    /// Returns `true` if the corresponding [`Producer`] has been destroyed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(7).split();
+    /// assert!(!c.is_abandoned());
+    /// assert_eq!(p.push(10), Ok(()));
+    /// drop(p);
+    /// assert!(c.is_abandoned());
+    /// // The items that are left in the ring buffer can still be consumed:
+    /// assert_eq!(c.pop(), Ok(10));
+    /// ```
+    pub fn is_abandoned(&self) -> bool {
+        Arc::strong_count(&self.buffer) < 2
     }
 
     /// Returns a read-only reference to the ring buffer.
