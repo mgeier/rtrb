@@ -238,7 +238,7 @@ impl<T> Producer<T> {
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
-        let tail = self.cached_tail.get();
+        let tail = self.buffer.tail.load(Ordering::Acquire);
 
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) < n {
@@ -287,7 +287,7 @@ impl<T> Consumer<T> {
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
+        let head = self.buffer.head.load(Ordering::Acquire);
 
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.distance(head, self.cached_tail.get()) < n {
@@ -499,9 +499,9 @@ impl<T> WriteChunkUninit<'_, T> {
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
-        let tail = p.buffer.increment(p.cached_tail.get(), n);
+        let tail = p.buffer.tail.load(Ordering::Acquire);
+        let tail = p.buffer.increment(tail, n);
         p.buffer.tail.store(tail, Ordering::Release);
-        p.cached_tail.set(tail);
         n
     }
 
@@ -735,9 +735,9 @@ impl<T> ReadChunk<'_, T> {
             self.second_ptr.add(i).drop_in_place();
         }
         let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
+        let head = c.buffer.head.load(Ordering::Acquire);
+        let head = c.buffer.increment(head, n);
         c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
         n
     }
 
@@ -789,9 +789,9 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
         let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
+        let head = c.buffer.head.load(Ordering::Acquire);
+        let head = c.buffer.increment(head, self.iterated);
         c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
     }
 }
 
