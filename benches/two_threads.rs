@@ -91,7 +91,7 @@ fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     add_function(
         &mut group,
         "",
-        |capacity| RingBuffer::new(capacity).split(),
+        RingBuffer::new,
         |p, i| p.push(i).is_ok(),
         |c| c.pop().ok(),
     );

@@ -1,9 +1,12 @@
-//! Writing and reading chunks of data into and from a [`RingBuffer`].
+//! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
 //! Multiple items can be written at once by using [`Producer::write_chunk()`]
 //! or its `unsafe` (but probably slightly faster) cousin [`Producer::write_chunk_uninit()`].
 //!
 //! Multiple items can be read at once with [`Consumer::read_chunk()`].
+//!
+//! If all chunks have the same size, the [`fixed_chunks`](crate::fixed_chunks) module
+//! can be used instead.
 //!
 //! # Examples
 //!
@@ -15,7 +18,7 @@
 //! ```
 //! use rtrb::RingBuffer;
 //!
-//! let (mut producer, mut consumer) = RingBuffer::new(5).split();
+//! let (mut producer, mut consumer) = RingBuffer::new(5);
 //!
 //! if let Ok(mut chunk) = producer.write_chunk(4) {
 //!     // NB: Don't use `chunk` as the first iterator in zip() if the other one might be shorter!
@@ -76,7 +79,7 @@
 //! The following examples show the [`Producer`] side;
 //! similar patterns can of course be used with [`Consumer::read_chunk()`] as well.
 //! Furthermore, the examples use [`Producer::write_chunk()`],
-//! which requires the trait bounds `T: Copy + Default`.
+//! which requires the trait bound `T: Default`.
 //! If that's too restrictive or if you want to squeeze out the last bit of performance,
 //! you can use [`Producer::write_chunk_uninit()`] instead,
 //! but this will force you to write some `unsafe` code.
@@ -139,7 +142,7 @@
 //!
 //! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: &mut I) -> usize
 //! where
-//!     T: Copy + Default,
+//!     T: Default,
 //!     I: Iterator<Item = T>,
 //! {
 //!     let n = match iter.size_hint() {
@@ -164,30 +167,14 @@ use core::fmt;
 use core::mem::MaybeUninit;
 use core::sync::atomic::Ordering;
 
-use crate::{Consumer, CopyToUninit, Producer, RingBuffer};
+use crate::{Consumer, CopyToUninit, Producer};
 
-impl<T> RingBuffer<T> {
-    /// Creates a `RingBuffer` with a capacity of `chunks * chunk_size`.
-    ///
-    /// On top of multiplying the two numbers for us,
-    /// this also guarantees that the ring buffer wrap-around happens
-    /// at an integer multiple of `chunk_size`.
-    /// This means that if [`Consumer::read_chunk()`] is used *exclusively* with
-    /// `chunk_size` (and [`Consumer::pop()`] is *not* used in-between),
-    /// the first slice returned from [`ReadChunk::as_slices()`]
-    /// will always contain the entire chunk and the second slice will always be empty.
-    /// Same for [`Producer::write_chunk()`]/[`WriteChunk::as_mut_slices()`] and
-    /// [`Producer::write_chunk_uninit()`]/[`WriteChunkUninit::as_mut_slices()`]
-    /// (as long as [`Producer::push()`] is *not* used in-between).
-    ///
-    /// If above conditions have been violated, the wrap-around guarantee can be restored
-    /// wit [`reset()`](RingBuffer::reset).
-    pub fn with_chunks(chunks: usize, chunk_size: usize) -> RingBuffer<T> {
-        // NB: Currently, there is nothing special to do here, but in the future
-        //     it might be necessary to take some steps to guarantee the promised behavior.
-        Self::new(chunks * chunk_size)
-    }
-}
+// This is used in the documentation.
+#[allow(unused_imports)]
+use crate::{
+    fixed_chunks::{FixedChunkConsumer, FixedChunkProducer},
+    RingBuffer,
+};
 
 impl<T> Producer<T> {
     /// Returns `n` slots (initially containing their [`Default`] value) for writing.
@@ -203,19 +190,15 @@ impl<T> Producer<T> {
     /// This has to be explicitly done by calling [`WriteChunk::commit()`],
     /// [`WriteChunk::commit_iterated()`] or [`WriteChunk::commit_all()`].
     ///
-    /// The type parameter `T` has a trait bound of [`Copy`],
-    /// which makes sure that no destructors are called at any time
-    /// (because it implies [`!Drop`](Drop)).
-    ///
     /// For an unsafe alternative that has no restrictions on `T`,
     /// see [`Producer::write_chunk_uninit()`].
     ///
     /// # Examples
     ///
-    /// See the [module-level documentation](crate::chunks#examples) for examples.
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module for more examples.
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
-        T: Copy + Default,
+        T: Default,
     {
         self.write_chunk_uninit(n).map(WriteChunk::from)
     }
@@ -242,6 +225,20 @@ impl<T> Producer<T> {
     /// For a safe alternative that provides [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
+        let tail = self.check_chunk(n)?;
+        let first_len = n.min(self.buffer.capacity - tail);
+        Ok(WriteChunkUninit {
+            first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
+            first_len,
+            second_ptr: self.buffer.data_ptr,
+            second_len: n - first_len,
+            producer: self,
+            iterated: 0,
+        })
+    }
+
+    /// Returns (possibly wrapped-around) tail position after `n` slots (if available).
+    pub(crate) fn check_chunk(&self, n: usize) -> Result<usize, ChunkError> {
         let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -256,16 +253,7 @@ impl<T> Producer<T> {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-        let tail = self.buffer.collapse_position(tail);
-        let first_len = n.min(self.buffer.capacity - tail);
-        Ok(WriteChunkUninit {
-            first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
-            first_len,
-            second_ptr: self.buffer.data_ptr,
-            second_len: n - first_len,
-            producer: self,
-            iterated: 0,
-        })
+        Ok(self.buffer.collapse_position(tail))
     }
 }
 
@@ -304,7 +292,7 @@ impl<T> Consumer<T> {
     ///
     /// // Scope to limit lifetime of ring buffer
     /// {
-    ///     let (mut p, mut c) = RingBuffer::new(2).split();
+    ///     let (mut p, mut c) = RingBuffer::new(2);
     ///
     ///     assert!(p.push(Thing).is_ok()); // 1
     ///     assert!(p.push(Thing).is_ok()); // 2
@@ -333,10 +321,23 @@ impl<T> Consumer<T> {
     /// assert_eq!(unsafe { DROP_COUNT }, 3);
     /// ```
     ///
-    /// See the [module-level documentation](crate::chunks#examples) for more examples.
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module for more examples.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let head = self.head.get();
+        let head = self.check_chunk(n)?;
+        let first_len = n.min(self.buffer.capacity - head);
+        Ok(ReadChunk {
+            first_ptr: unsafe { self.buffer.data_ptr.add(head) },
+            first_len,
+            second_ptr: self.buffer.data_ptr,
+            second_len: n - first_len,
+            consumer: self,
+            iterated: 0,
+        })
+    }
 
+    /// Returns (possibly wrapped-around) head position after `n` slots (if available).
+    pub(crate) fn check_chunk(&self, n: usize) -> Result<usize, ChunkError> {
+        let head = self.head.get();
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.distance(head, self.tail.get()) < n {
             // Refresh the tail ...
@@ -349,17 +350,7 @@ impl<T> Consumer<T> {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-
-        let head = self.buffer.collapse_position(head);
-        let first_len = n.min(self.buffer.capacity - head);
-        Ok(ReadChunk {
-            first_ptr: unsafe { self.buffer.data_ptr.add(head) },
-            first_len,
-            second_ptr: self.buffer.data_ptr,
-            second_len: n - first_len,
-            consumer: self,
-            iterated: 0,
-        })
+        Ok(self.buffer.collapse_position(head))
     }
 }
 
@@ -383,12 +374,12 @@ impl<T> Consumer<T> {
 /// [`commit()`](WriteChunk::commit),
 /// [`commit_iterated()`](WriteChunk::commit_iterated) or
 /// [`commit_all()`](WriteChunk::commit_all).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
 impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     /// Fills all slots with the [`Default`] value.
     fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
@@ -408,7 +399,7 @@ where
 
 impl<T> WriteChunk<'_, T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     /// Returns two slices for writing to the requested slots.
     ///
@@ -416,9 +407,6 @@ where
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
-    ///
-    /// See [`RingBuffer::with_chunks()`] for a way to make sure
-    /// that the second slice is always empty.
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         // Safety: All slots have been initialized in From::from().
         unsafe {
@@ -464,7 +452,7 @@ where
 
 impl<'a, T> Iterator for WriteChunk<'a, T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     type Item = &'a mut T;
 
@@ -496,7 +484,7 @@ where
 /// [`commit()`](WriteChunkUninit::commit),
 /// [`commit_iterated()`](WriteChunkUninit::commit_iterated) or
 /// [`commit_all()`](WriteChunkUninit::commit_all).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
@@ -511,9 +499,6 @@ impl<T> WriteChunkUninit<'_, T> {
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
-    ///
-    /// See [`RingBuffer::with_chunks()`] for a way to make sure
-    /// that the second slice is always empty.
     ///
     /// The extension trait [`CopyToUninit`] can be used to safely copy data into those slices.
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
@@ -624,9 +609,6 @@ impl<T> ReadChunk<'_, T> {
     ///
     /// The first slice can only be empty if `0` slots have been requested.
     /// If the first slice contains all requested slots, the second one is empty.
-    ///
-    /// See [`RingBuffer::with_chunks()`] for a way to make sure
-    /// that the second slice is always empty.
     pub fn as_slices(&self) -> (&[T], &[T]) {
         (
             unsafe { core::slice::from_raw_parts(self.first_ptr, self.first_len) },
@@ -754,8 +736,15 @@ impl std::io::Read for Consumer<u8> {
     }
 }
 
-/// Error type for [`Consumer::read_chunk()`], [`Producer::write_chunk()`]
-/// and [`Producer::write_chunk_uninit()`].
+/// Error type for chunk-related functions.
+///
+/// * [`Producer::write_chunk()`]
+/// * [`Producer::write_chunk_uninit()`]
+/// * [`Consumer::read_chunk()`]
+/// * [`FixedChunkProducer::push_chunk()`]
+/// * [`FixedChunkProducer::push_chunk_uninit()`]
+/// * [`FixedChunkConsumer::pop_chunk()`]
+/// * [`FixedChunkConsumer::peek_chunk()`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ChunkError {
     /// Fewer than the requested number of slots were available.

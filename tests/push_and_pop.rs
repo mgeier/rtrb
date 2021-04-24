@@ -6,7 +6,7 @@ use rtrb::{chunks::ChunkError, RingBuffer};
 
 #[test]
 fn smoke() {
-    let (mut p, mut c) = RingBuffer::new(1).split();
+    let (mut p, mut c) = RingBuffer::new(1);
 
     p.push(7).unwrap();
     assert_eq!(c.pop(), Ok(7));
@@ -19,7 +19,7 @@ fn smoke() {
 #[test]
 fn capacity() {
     for i in 1..10 {
-        let (p, c) = RingBuffer::<i32>::new(i).split();
+        let (p, c) = RingBuffer::<i32>::new(i);
         assert_eq!(p.buffer().capacity(), i);
         assert_eq!(c.buffer().capacity(), i);
     }
@@ -27,7 +27,7 @@ fn capacity() {
 
 #[test]
 fn zero_capacity() {
-    let (mut p, mut c) = RingBuffer::<i32>::new(0).split();
+    let (mut p, mut c) = RingBuffer::<i32>::new(0);
 
     assert_eq!(p.slots(), 0);
     assert_eq!(c.slots(), 0);
@@ -65,7 +65,7 @@ fn zero_sized_type() {
     struct ZeroSized;
     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
 
-    let (mut p, mut c) = RingBuffer::new(1).split();
+    let (mut p, mut c) = RingBuffer::new(1);
     assert_eq!(p.buffer().capacity(), 1);
     assert_eq!(p.slots(), 1);
     assert_eq!(c.slots(), 0);
@@ -82,7 +82,7 @@ fn zero_sized_type() {
 #[test]
 fn parallel() {
     const COUNT: usize = 100_000;
-    let (mut p, mut c) = RingBuffer::new(3).split();
+    let (mut p, mut c) = RingBuffer::new(3);
     let pop_thread = std::thread::spawn(move || {
         for i in 0..COUNT {
             loop {
@@ -125,7 +125,7 @@ fn drops() {
         let additional = rng.gen_range(0, 50);
 
         DROPS.store(0, Ordering::SeqCst);
-        let (mut p, mut c) = RingBuffer::new(50).split();
+        let (mut p, mut c) = RingBuffer::new(50);
         let pop_thread = std::thread::spawn(move || {
             for _ in 0..steps {
                 while c.pop().is_err() {}

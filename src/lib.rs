@@ -1,8 +1,8 @@
 //! A realtime-safe single-producer single-consumer (SPSC) ring buffer.
 //!
 //! A [`RingBuffer`] consists of two parts:
-//! a [`Producer`] for writing into the ring buffer and
-//! a [`Consumer`] for reading from the ring buffer.
+//! a [`Producer`] (or [`FixedChunkProducer`]) for writing into the ring buffer and
+//! a [`Consumer`] (or [`FixedChunkConsumer`]) for reading from the ring buffer.
 //!
 //! A fixed-capacity buffer is allocated on construction.
 //! After that, no more memory is allocated (unless the type `T` does that internally).
@@ -26,7 +26,7 @@
 //! ```
 //! use rtrb::{RingBuffer, PushError, PopError};
 //!
-//! let (mut producer, mut consumer) = RingBuffer::new(2).split();
+//! let (mut producer, mut consumer) = RingBuffer::new(2);
 //!
 //! assert_eq!(producer.push(10), Ok(()));
 //! assert_eq!(producer.push(20), Ok(()));
@@ -40,8 +40,12 @@
 //! ```
 //!
 //! For examples that write multiple items at once with [`Producer::write_chunk()`]
-//! and read multiple items with [`Consumer::read_chunk()`]
-//! see the documentation of the [`chunks`] module.
+//! and/or read multiple items at once with [`Consumer::read_chunk()`]
+//! see the documentation of the [`chunks#examples`] module.
+//!
+//! For examples that write fixed-size chunks with [`FixedChunkProducer::push_chunk()`]
+//! and/or read fixed-size chunks with [`FixedChunkConsumer::pop_chunk()`]
+//! see the documentation of the [`fixed_chunks#examples`] module.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(rust_2018_idioms)]
@@ -60,15 +64,22 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use cache_padded::CachePadded;
 
 pub mod chunks;
+pub mod fixed_chunks;
 
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
+#[allow(unused_imports)]
+use fixed_chunks::{FixedChunkConsumer, FixedChunkProducer};
 
-/// A bounded single-producer single-consumer queue.
+/// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
-/// both of which can be obtained with [`RingBuffer::split()`].
+/// both of which can be obtained with [`RingBuffer::new()`].
+///
+/// Alternatively, fixed-size chunks can be written with a [`FixedChunkProducer`] and/or
+/// read with a [`FixedChunkConsumer`], which can be obtained with
+/// [`Producer::try_fixed_chunk_size()`] and [`Consumer::try_fixed_chunk_size()`], respectively.
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
@@ -94,20 +105,17 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    /// Creates a `RingBuffer` with the given `capacity`.
+    /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
-    /// The returned `RingBuffer` is typically immediately split into
-    /// the [`Producer`] and the [`Consumer`] side by [`split()`](RingBuffer::split).
-    ///
-    /// If you want guaranteed wrap-around behavior,
-    /// use [`with_chunks()`](RingBuffer::with_chunks).
+    /// If fixed-size chunks are desired, [`Producer::try_fixed_chunk_size()`] and/or
+    /// [`Consumer::try_fixed_chunk_size()`] can be used.
     ///
     /// # Examples
     ///
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let rb = RingBuffer::<f32>::new(100);
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
     /// ```
     ///
     /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
@@ -116,30 +124,18 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut producer, consumer) = RingBuffer::new(100).split();
+    /// let (mut producer, consumer) = RingBuffer::new(100);
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
-    pub fn new(capacity: usize) -> RingBuffer<T> {
-        RingBuffer {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        let buffer = Arc::new(RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
             _marker: PhantomData,
-        }
-    }
-
-    /// Splits the `RingBuffer` into [`Producer`] and [`Consumer`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (producer, consumer) = RingBuffer::<f32>::new(100).split();
-    /// ```
-    pub fn split(self) -> (Producer<T>, Consumer<T>) {
-        let buffer = Arc::new(self);
+        });
         let p = Producer {
             buffer: buffer.clone(),
             head: Cell::new(0),
@@ -153,73 +149,16 @@ impl<T> RingBuffer<T> {
         (p, c)
     }
 
-    /// Resets a ring buffer.
-    ///
-    /// This drops all elements that are currently in the queue
-    /// (running their destructors if `T` implements [`Drop`]) and
-    /// resets the internal read and write positions to the beginning of the buffer.
-    ///
-    /// This also resets the guarantees given by [`with_chunks()`](RingBuffer::with_chunks).
-    ///
-    /// Exclusive access to both [`Producer`] and [`Consumer`] is needed for this operation.
-    /// They can be moved between threads, for example, with a `RingBuffer<Producer<T>>`
-    /// and a `RingBuffer<Consumer<T>>`, respectively.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `producer` and `consumer` do not originate from the same `RingBuffer`.
+    /// Returns the capacity of the ring buffer.
     ///
     /// # Examples
     ///
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(2).split();
-    ///
-    /// p = std::thread::spawn(move || {
-    ///     assert_eq!(p.push(10), Ok(()));
-    ///     p
-    /// }).join().unwrap();
-    ///
-    /// RingBuffer::reset(&mut p, &mut c);
-    ///
-    /// // The full capacity is now available for writing:
-    /// if let Ok(mut chunk) = p.write_chunk(p.buffer().capacity()) {
-    ///     let (first, second) = chunk.as_mut_slices();
-    ///     // The first slice is now guaranteed to span the whole buffer:
-    ///     first[0] = 20;
-    ///     first[1] = 30;
-    ///     assert!(second.is_empty());
-    ///     chunk.commit_all();
-    /// } else {
-    ///     unreachable!();
-    /// }
-    /// ```
-    pub fn reset(producer: &mut Producer<T>, consumer: &mut Consumer<T>) {
-        assert!(
-            Arc::ptr_eq(&producer.buffer, &consumer.buffer),
-            "producer and consumer not from the same ring buffer"
-        );
-        consumer.read_chunk(consumer.slots()).unwrap().commit_all();
-        assert_eq!(
-            producer.buffer.head.swap(0, Ordering::Relaxed),
-            producer.buffer.tail.swap(0, Ordering::Relaxed)
-        );
-        producer.head.set(0);
-        producer.tail.set(0);
-        consumer.head.set(0);
-        consumer.tail.set(0);
-    }
-
-    /// Returns the capacity of the queue.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let rb = RingBuffer::<f32>::new(100);
-    /// assert_eq!(rb.capacity(), 100);
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
+    /// assert_eq!(producer.buffer().capacity(), 100);
+    /// assert_eq!(consumer.buffer().capacity(), 100);
     /// ```
     pub fn capacity(&self) -> usize {
         self.capacity
@@ -309,12 +248,11 @@ impl<T> PartialEq for RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1000).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1000);
     /// assert_eq!(p.buffer(), c.buffer());
     ///
-    /// let rb1 = RingBuffer::<f32>::new(1000);
-    /// let rb2 = RingBuffer::<f32>::new(1000);
-    /// assert_ne!(rb1, rb2);
+    /// let (other_p, _) = RingBuffer::<f32>::new(1000);
+    /// assert_ne!(p.buffer(), other_p.buffer());
     /// ```
     fn eq(&self, other: &Self) -> bool {
         // There can never be multiple instances with the same `data_ptr`.
@@ -330,12 +268,12 @@ impl<T> Eq for RingBuffer<T> {}
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Can only be created with [`RingBuffer::split()`]
-/// (together with its counterpart, the [`Consumer`]).
+/// Can be created with [`RingBuffer::new()`] (together with its counterpart, the [`Consumer`]).
 ///
 /// Individual elements can be moved into the ring buffer with [`Producer::push()`],
 /// multiple elements at once can be written with [`Producer::write_chunk()`]
 /// and [`Producer::write_chunk_uninit()`].
+/// If all chunks have the same size, a [`FixedChunkProducer`] can be used instead.
 ///
 /// The number of free slots currently available for writing can be obtained with
 /// [`Producer::slots()`].
@@ -345,7 +283,7 @@ impl<T> Eq for RingBuffer<T> {}
 /// that no more data will be produced.
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
     /// A reference to the ring buffer.
     buffer: Arc<RingBuffer<T>>,
@@ -375,7 +313,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::{RingBuffer, PushError};
     ///
-    /// let (mut p, c) = RingBuffer::new(1).split();
+    /// let (mut p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
@@ -408,7 +346,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1024).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1024);
     ///
     /// assert_eq!(p.slots(), 1024);
     /// ```
@@ -428,7 +366,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1);
     ///
     /// assert!(!p.is_full());
     /// ```
@@ -438,7 +376,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if p.is_full() {
     ///     // The buffer might be full, but it might as well not be
     ///     // if an item was just consumed on another thread.
@@ -449,7 +387,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if !p.is_full() {
     ///     // At least one slot is guaranteed to be available for writing.
     /// }
@@ -465,7 +403,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, c) = RingBuffer::new(7).split();
+    /// let (mut p, c) = RingBuffer::new(7);
     /// assert!(!p.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(c);
@@ -480,7 +418,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if !p.is_abandoned() {
     ///     // Right now, the consumer might still be alive, but it might as well not be
     ///     // if another thread has just dropped it.
@@ -491,7 +429,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if p.is_abandoned() {
     ///     // The consumer does definitely not exist anymore.
     /// }
@@ -507,7 +445,7 @@ impl<T> Producer<T> {
 
     /// Get the tail position for writing the next slot, if available.
     ///
-    /// This is a strict subset of the functionality implemented in write_chunk_uninit().
+    /// This is a strict subset of the functionality implemented in Producer::check_chunk().
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
         let tail = self.tail.get();
@@ -533,11 +471,11 @@ impl<T> Producer<T> {
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Can only be created with [`RingBuffer::split()`]
-/// (together with its counterpart, the [`Producer`]).
+/// Can be created with [`RingBuffer::new()`] (together with its counterpart, the [`Producer`]).
 ///
 /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
 /// multiple elements at once can be read with [`Consumer::read_chunk()`].
+/// If all chunks have the same size, a [`FixedChunkConsumer`] can be used instead.
 ///
 /// The number of free slots currently available for reading can be obtained with
 /// [`Consumer::slots()`].
@@ -577,7 +515,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::{PopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1).split();
+    /// let (mut p, mut c) = RingBuffer::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
@@ -588,7 +526,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1).split();
+    /// # let (mut p, mut c) = RingBuffer::new(1);
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
@@ -613,7 +551,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::{PeekError, RingBuffer};
     ///
-    /// let (mut p, c) = RingBuffer::new(1).split();
+    /// let (mut p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(c.peek(), Err(PeekError::Empty));
     /// assert_eq!(p.push(10), Ok(()));
@@ -642,7 +580,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1024).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1024);
     ///
     /// assert_eq!(c.slots(), 0);
     /// ```
@@ -662,7 +600,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1);
     ///
     /// assert!(c.is_empty());
     /// ```
@@ -672,7 +610,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if c.is_empty() {
     ///     // The buffer might be empty, but it might as well not be
     ///     // if an item was just produced on another thread.
@@ -683,7 +621,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if !c.is_empty() {
     ///     // At least one slot is guaranteed to be available for reading.
     /// }
@@ -699,7 +637,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(7).split();
+    /// let (mut p, mut c) = RingBuffer::new(7);
     /// assert!(!c.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(p);
@@ -713,7 +651,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if !c.is_abandoned() {
     ///     // Right now, the producer might still be alive, but it might as well not be
     ///     // if another thread has just dropped it.
@@ -724,7 +662,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if c.is_abandoned() {
     ///     // The producer does definitely not exist anymore.
     /// }
@@ -740,7 +678,7 @@ impl<T> Consumer<T> {
 
     /// Get the head position for reading the next slot, if available.
     ///
-    /// This is a strict subset of the functionality implemented in read_chunk().
+    /// This is a strict subset of the functionality implemented in Consumer::check_chunk().
     /// For performance, this special case is immplemented separately.
     fn next_head(&self) -> Option<usize> {
         let head = self.head.get();
@@ -764,7 +702,7 @@ impl<T> Consumer<T> {
 /// method on built-in slices.
 ///
 /// This can be used to safely copy data to the slices returned from
-/// [`WriteChunkUninit::as_mut_slices()`].
+/// [`WriteChunkUninit::as_mut_slices()`] and [`FixedChunkProducer::push_chunk_uninit()`].
 ///
 /// To use this, the trait has to be brought into scope, e.g. with:
 ///
