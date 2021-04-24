@@ -9,7 +9,7 @@ use std::mem::MaybeUninit;
 use criterion::{black_box, criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
-use rtrb::{CopyToUninit, RingBuffer};
+use rtrb::{Consumer, CopyToUninit, Producer, RingBuffer};
 
 const CHUNK_SIZE: usize = 4096;
 
@@ -36,7 +36,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     group.throughput(criterion::Throughput::Bytes(CHUNK_SIZE as u64));
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    let (mut p, mut c) = RingBuffer::<u8>::with_chunks(1000, CHUNK_SIZE).split();
+    let (mut p, mut c) = RingBuffer::new(1000 * CHUNK_SIZE + 1);
 
     add_function(&mut group, "1-pop", |data| {
         let mut result = [0; CHUNK_SIZE];
@@ -61,8 +61,9 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let _ = p.write(&data).unwrap();
         let chunk = c.read_chunk(data.len()).unwrap();
         let (first, second) = chunk.as_slices();
-        result.copy_from_slice(first);
-        debug_assert!(second.is_empty());
+        let mid = first.len();
+        result[..mid].copy_from_slice(first);
+        result[mid..].copy_from_slice(second);
         chunk.commit_all();
         result
     });
@@ -71,8 +72,9 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let mut result = [0; CHUNK_SIZE];
         let mut chunk = p.write_chunk(data.len()).unwrap();
         let (first, second) = chunk.as_mut_slices();
-        first.copy_from_slice(data);
-        debug_assert!(second.is_empty());
+        let mid = first.len();
+        first.copy_from_slice(&data[..mid]);
+        second.copy_from_slice(&data[mid..]);
         chunk.commit_all();
         let _ = c.read(&mut result).unwrap();
         result
@@ -82,8 +84,9 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let mut result = [0; CHUNK_SIZE];
         let mut chunk = p.write_chunk_uninit(data.len()).unwrap();
         let (first, second) = chunk.as_mut_slices();
-        data.copy_to_uninit(first);
-        debug_assert!(second.is_empty());
+        let mid = first.len();
+        data[..mid].copy_to_uninit(first);
+        data[mid..].copy_to_uninit(second);
         unsafe { chunk.commit_all() };
         let _ = c.read(&mut result).unwrap();
         result
@@ -125,6 +128,34 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     add_function(&mut group, "4-write-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let _ = p.write(&data).unwrap();
+        let _ = c.read(&mut result).unwrap();
+        result
+    });
+
+    let (mut p, mut c): (Producer<_>, _) = RingBuffer::with_chunks(1000).of_size(CHUNK_SIZE);
+
+    add_function(&mut group, "5-pop-fixed-chunk", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        let _ = p.write(&data).unwrap();
+        result.copy_from_slice(&c.pop_chunk().unwrap());
+        result
+    });
+
+    let (mut p, mut c): (_, Consumer<_>) = RingBuffer::with_chunks(1000).of_size(CHUNK_SIZE);
+
+    add_function(&mut group, "5-push-fixed-chunk", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        p.push_chunk().unwrap().copy_from_slice(data);
+        let _ = c.read(&mut result).unwrap();
+        result
+    });
+
+    add_function(&mut group, "5-push-fixed-chunk-uninit", |data| {
+        let mut result = [0; CHUNK_SIZE];
+        // Safety: all slots will be initialized by copy_to_uninit().
+        unsafe {
+            data.copy_to_uninit(&mut p.push_chunk_uninit().unwrap());
+        }
         let _ = c.read(&mut result).unwrap();
         result
     });
