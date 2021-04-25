@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand::{thread_rng, Rng};
 
-use rtrb::{ChunkError, RingBuffer};
+use rtrb::{chunks::ChunkError, RingBuffer};
 
 #[test]
 fn smoke() {
