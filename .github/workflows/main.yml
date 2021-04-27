@@ -79,7 +79,7 @@ jobs:
           cargo clippy --all-targets --all-features -- -D warnings
       - name: docs
         run: |
-          cargo doc --verbose --workspace --all-features
+          cargo rustdoc --all-features -- -D warnings
       - name: packaging
         run: |
           cargo package --verbose
