@@ -633,6 +633,9 @@ impl<T> Producer<T> {
 
     /// Returns the number of slots available for writing.
     ///
+    /// Since items can be concurrently consumed on another thread, the actual number
+    /// of available slots may increase at any time (up to the [`RingBuffer::capacity()`]).
+    ///
     /// To check for a single available slot,
     /// using [`Producer::is_full()`] is often quicker
     /// (because it might not have to check an atomic variable).
@@ -652,7 +655,7 @@ impl<T> Producer<T> {
         self.buffer.capacity - self.buffer.distance(head, self.tail.get())
     }
 
-    /// Returns `true` if there are no slots available for writing.
+    /// Returns `true` if there are currently no slots available for writing.
     ///
     /// # Examples
     ///
@@ -662,6 +665,28 @@ impl<T> Producer<T> {
     /// let (p, c) = RingBuffer::<f32>::new(1).split();
     ///
     /// assert!(!p.is_full());
+    /// ```
+    ///
+    /// Since items can be concurrently consumed on another thread, the ring buffer
+    /// might not be full for long:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// if p.is_full() {
+    ///     // The buffer might be full, but it might as well not be
+    ///     // if an item was just consumed on another thread.
+    /// }
+    /// ```
+    ///
+    /// However, if it's not full, another thread cannot change that:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// if !p.is_full() {
+    ///     // At least one slot is guaranteed to be available for writing.
+    /// }
     /// ```
     pub fn is_full(&self) -> bool {
         self.next_tail().is_none()
@@ -885,6 +910,9 @@ impl<T> Consumer<T> {
 
     /// Returns the number of slots available for reading.
     ///
+    /// Since items can be concurrently produced on another thread, the actual number
+    /// of available slots may increase at any time (up to the [`RingBuffer::capacity()`]).
+    ///
     /// To check for a single available slot,
     /// using [`Consumer::is_empty()`] is often quicker
     /// (because it might not have to check an atomic variable).
@@ -904,7 +932,7 @@ impl<T> Consumer<T> {
         self.buffer.distance(self.head.get(), tail)
     }
 
-    /// Returns `true` if there are no slots available for reading.
+    /// Returns `true` if there are currently no slots available for reading.
     ///
     /// # Examples
     ///
@@ -914,6 +942,28 @@ impl<T> Consumer<T> {
     /// let (p, c) = RingBuffer::<f32>::new(1).split();
     ///
     /// assert!(c.is_empty());
+    /// ```
+    ///
+    /// Since items can be concurrently produced on another thread, the ring buffer
+    /// might not be empty for long:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// if c.is_empty() {
+    ///     // The buffer might be empty, but it might as well not be
+    ///     // if an item was just produced on another thread.
+    /// }
+    /// ```
+    ///
+    /// However, if it's not empty, another thread cannot change that:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// if !c.is_empty() {
+    ///     // At least one slot is guaranteed to be available for reading.
+    /// }
     /// ```
     pub fn is_empty(&self) -> bool {
         self.next_head().is_none()
