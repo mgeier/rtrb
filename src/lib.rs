@@ -714,6 +714,28 @@ impl<T> Producer<T> {
     /// // Even though it's futile, items can still be written:
     /// assert_eq!(p.push(11), Ok(()));
     /// ```
+    ///
+    /// Since the consumer can be concurrently dropped on another thread,
+    /// the producer might become abandoned at any time:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// if !p.is_abandoned() {
+    ///     // Right now, the consumer might still be alive, but it might as well not be
+    ///     // if another thread has just dropped it.
+    /// }
+    /// ```
+    ///
+    /// However, if it already is abandoned, it will stay that way:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// if p.is_abandoned() {
+    ///     // The consumer does definitely not exist anymore.
+    /// }
+    /// ```
     pub fn is_abandoned(&self) -> bool {
         Arc::strong_count(&self.buffer) < 2
     }
@@ -1015,6 +1037,28 @@ impl<T> Consumer<T> {
     /// assert!(c.is_abandoned());
     /// // The items that are left in the ring buffer can still be consumed:
     /// assert_eq!(c.pop(), Ok(10));
+    /// ```
+    ///
+    /// Since the producer can be concurrently dropped on another thread,
+    /// the consumer might become abandoned at any time:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// if !c.is_abandoned() {
+    ///     // Right now, the producer might still be alive, but it might as well not be
+    ///     // if another thread has just dropped it.
+    /// }
+    /// ```
+    ///
+    /// However, if it already is abandoned, it will stay that way:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// if c.is_abandoned() {
+    ///     // The producer does definitely not exist anymore.
+    /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
         Arc::strong_count(&self.buffer) < 2
