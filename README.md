@@ -1,7 +1,7 @@
 Real-Time Ring Buffer
 =====================
 
-A wait-free single-producer single-consumer ring buffer for Rust.
+A wait-free single-producer single-consumer (SPSC) ring buffer for Rust.
 
 * Crate: https://crates.io/crates/rtrb
 * Documentation: https://docs.rs/rtrb
