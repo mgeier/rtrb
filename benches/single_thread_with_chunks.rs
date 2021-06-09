@@ -132,33 +132,24 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         result
     });
 
-    let (mut p, c) = RingBuffer::new(1000 * CHUNK_SIZE);
+    let (p, c) = RingBuffer::new(1000 * CHUNK_SIZE);
+    let mut p = p.try_fixed_chunk_size(CHUNK_SIZE).unwrap();
     let mut c = c.try_fixed_chunk_size(CHUNK_SIZE).unwrap();
 
-    add_function(&mut group, "5-pop-fixed-chunk", |data| {
+    add_function(&mut group, "5-fixed-chunks", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(&data).unwrap();
+        p.push_chunk().unwrap().copy_from_slice(data);
         result.copy_from_slice(&c.pop_chunk().unwrap());
         result
     });
 
-    let (p, mut c) = RingBuffer::new(1000 * CHUNK_SIZE);
-    let mut p = p.try_fixed_chunk_size(CHUNK_SIZE).unwrap();
-
-    add_function(&mut group, "5-push-fixed-chunk", |data| {
-        let mut result = [0; CHUNK_SIZE];
-        p.push_chunk().unwrap().copy_from_slice(data);
-        let _ = c.read(&mut result).unwrap();
-        result
-    });
-
-    add_function(&mut group, "5-push-fixed-chunk-uninit", |data| {
+    add_function(&mut group, "5-fixed-chunks-uninit", |data| {
         let mut result = [0; CHUNK_SIZE];
         // Safety: all slots will be initialized by copy_to_uninit().
         unsafe {
             data.copy_to_uninit(&mut p.push_chunk_uninit().unwrap());
         }
-        let _ = c.read(&mut result).unwrap();
+        result.copy_from_slice(&c.pop_chunk().unwrap());
         result
     });
 
