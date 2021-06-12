@@ -205,6 +205,12 @@ pub struct FixedChunkProducer<T> {
 
 unsafe impl<T: Send> Send for FixedChunkProducer<T> {}
 
+impl<T> From<FixedChunkProducer<T>> for Producer<T> {
+    fn from(p: FixedChunkProducer<T>) -> Self {
+        p.inner
+    }
+}
+
 impl<T> FixedChunkProducer<T> {
     /// Returns a [`Default`]-initialized fixed-size chunk for writing,
     /// advancing the write position when dropped.
@@ -428,6 +434,12 @@ pub struct FixedChunkConsumer<T> {
 }
 
 unsafe impl<T: Send> Send for FixedChunkConsumer<T> {}
+
+impl<T> From<FixedChunkConsumer<T>> for Consumer<T> {
+    fn from(c: FixedChunkConsumer<T>) -> Self {
+        c.inner
+    }
+}
 
 impl<T> FixedChunkConsumer<T> {
     /// Returns a fixed-size chunk for reading, advancing the read position when dropped.
