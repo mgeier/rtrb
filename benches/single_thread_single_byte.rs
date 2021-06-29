@@ -36,7 +36,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         v.pop().unwrap()
     });
 
-    let (mut p, mut c) = RingBuffer::<u8>::new(1).split();
+    let (mut p, mut c) = RingBuffer::<u8>::new(1);
 
     add_function(&mut group, "1-push-pop", |i| {
         p.push(i).unwrap();

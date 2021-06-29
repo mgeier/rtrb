@@ -41,7 +41,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     group.throughput(criterion::Throughput::Bytes(2));
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    let (mut p, mut c) = RingBuffer::<u8>::new(3).split();
+    let (mut p, mut c) = RingBuffer::<u8>::new(3);
 
     add_function(&mut group, "1-push-pop", |data| {
         let mut result = [0; 2];

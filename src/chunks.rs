@@ -15,7 +15,7 @@
 //! ```
 //! use rtrb::RingBuffer;
 //!
-//! let (mut producer, mut consumer) = RingBuffer::new(5).split();
+//! let (mut producer, mut consumer) = RingBuffer::new(5);
 //!
 //! if let Ok(mut chunk) = producer.write_chunk(4) {
 //!     // NB: Don't use `chunk` as the first iterator in zip() if the other one might be shorter!
@@ -285,7 +285,7 @@ impl<T> Consumer<T> {
     ///
     /// // Scope to limit lifetime of ring buffer
     /// {
-    ///     let (mut p, mut c) = RingBuffer::new(2).split();
+    ///     let (mut p, mut c) = RingBuffer::new(2);
     ///
     ///     assert!(p.push(Thing).is_ok()); // 1
     ///     assert!(p.push(Thing).is_ok()); // 2

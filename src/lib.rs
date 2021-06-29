@@ -26,7 +26,7 @@
 //! ```
 //! use rtrb::{RingBuffer, PushError, PopError};
 //!
-//! let (mut producer, mut consumer) = RingBuffer::new(2).split();
+//! let (mut producer, mut consumer) = RingBuffer::new(2);
 //!
 //! assert_eq!(producer.push(10), Ok(()));
 //! assert_eq!(producer.push(20), Ok(()));
@@ -68,7 +68,7 @@ use chunks::WriteChunkUninit;
 /// A bounded single-producer single-consumer (SPSC) queue.
 ///
 /// Elements can be written with a [`Producer`] and read with a [`Consumer`],
-/// both of which can be obtained with [`RingBuffer::split()`].
+/// both of which can be obtained with [`RingBuffer::new()`].
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
@@ -94,17 +94,14 @@ pub struct RingBuffer<T> {
 }
 
 impl<T> RingBuffer<T> {
-    /// Creates a `RingBuffer` with the given `capacity`.
-    ///
-    /// The returned `RingBuffer` is typically immediately split into
-    /// the [`Producer`] and the [`Consumer`] side by [`split()`](RingBuffer::split).
+    /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
     /// # Examples
     ///
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let rb = RingBuffer::<f32>::new(100);
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
     /// ```
     ///
     /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
@@ -113,30 +110,18 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut producer, consumer) = RingBuffer::new(100).split();
+    /// let (mut producer, consumer) = RingBuffer::new(100);
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
-    pub fn new(capacity: usize) -> RingBuffer<T> {
-        RingBuffer {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        let buffer = Arc::new(RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
             _marker: PhantomData,
-        }
-    }
-
-    /// Splits the `RingBuffer` into [`Producer`] and [`Consumer`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (producer, consumer) = RingBuffer::<f32>::new(100).split();
-    /// ```
-    pub fn split(self) -> (Producer<T>, Consumer<T>) {
-        let buffer = Arc::new(self);
+        });
         let p = Producer {
             buffer: buffer.clone(),
             head: Cell::new(0),
@@ -157,8 +142,11 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let rb = RingBuffer::<f32>::new(100);
-    /// assert_eq!(rb.capacity(), 100);
+    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
+    /// assert_eq!(producer.buffer().capacity(), 100);
+    /// assert_eq!(consumer.buffer().capacity(), 100);
+    /// // Both producer and consumer of course refer to the same ring buffer:
+    /// assert_eq!(producer.buffer(), consumer.buffer());
     /// ```
     pub fn capacity(&self) -> usize {
         self.capacity
@@ -248,12 +236,11 @@ impl<T> PartialEq for RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1000).split();
-    /// assert_eq!(p.buffer(), c.buffer());
+    /// let (p1, c1) = RingBuffer::<f32>::new(1000);
+    /// assert_eq!(p1.buffer(), c1.buffer());
     ///
-    /// let rb1 = RingBuffer::<f32>::new(1000);
-    /// let rb2 = RingBuffer::<f32>::new(1000);
-    /// assert_ne!(rb1, rb2);
+    /// let (p2, c2) = RingBuffer::<f32>::new(1000);
+    /// assert_ne!(p1.buffer(), p2.buffer());
     /// ```
     fn eq(&self, other: &Self) -> bool {
         // There can never be multiple instances with the same `data_ptr`.
@@ -269,7 +256,7 @@ impl<T> Eq for RingBuffer<T> {}
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Can only be created with [`RingBuffer::split()`]
+/// Can only be created with [`RingBuffer::new()`]
 /// (together with its counterpart, the [`Consumer`]).
 ///
 /// Individual elements can be moved into the ring buffer with [`Producer::push()`],
@@ -314,7 +301,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::{RingBuffer, PushError};
     ///
-    /// let (mut p, c) = RingBuffer::new(1).split();
+    /// let (mut p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
@@ -347,7 +334,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1024).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1024);
     ///
     /// assert_eq!(p.slots(), 1024);
     /// ```
@@ -367,7 +354,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1);
     ///
     /// assert!(!p.is_full());
     /// ```
@@ -377,7 +364,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if p.is_full() {
     ///     // The buffer might be full, but it might as well not be
     ///     // if an item was just consumed on another thread.
@@ -388,7 +375,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if !p.is_full() {
     ///     // At least one slot is guaranteed to be available for writing.
     /// }
@@ -404,7 +391,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, c) = RingBuffer::new(7).split();
+    /// let (mut p, c) = RingBuffer::new(7);
     /// assert!(!p.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(c);
@@ -419,7 +406,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if !p.is_abandoned() {
     ///     // Right now, the consumer might still be alive, but it might as well not be
     ///     // if another thread has just dropped it.
@@ -430,7 +417,7 @@ impl<T> Producer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if p.is_abandoned() {
     ///     // The consumer does definitely not exist anymore.
     /// }
@@ -472,7 +459,7 @@ impl<T> Producer<T> {
 /// but references from different threads are not allowed
 /// (i.e. it is [`Send`] but not [`Sync`]).
 ///
-/// Can only be created with [`RingBuffer::split()`]
+/// Can only be created with [`RingBuffer::new()`]
 /// (together with its counterpart, the [`Producer`]).
 ///
 /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
@@ -516,7 +503,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::{PopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1).split();
+    /// let (mut p, mut c) = RingBuffer::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
@@ -527,7 +514,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1).split();
+    /// # let (mut p, mut c) = RingBuffer::new(1);
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
@@ -552,7 +539,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::{PeekError, RingBuffer};
     ///
-    /// let (mut p, c) = RingBuffer::new(1).split();
+    /// let (mut p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(c.peek(), Err(PeekError::Empty));
     /// assert_eq!(p.push(10), Ok(()));
@@ -581,7 +568,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1024).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1024);
     ///
     /// assert_eq!(c.slots(), 0);
     /// ```
@@ -601,7 +588,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// let (p, c) = RingBuffer::<f32>::new(1);
     ///
     /// assert!(c.is_empty());
     /// ```
@@ -611,7 +598,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if c.is_empty() {
     ///     // The buffer might be empty, but it might as well not be
     ///     // if an item was just produced on another thread.
@@ -622,7 +609,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<f32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<f32>::new(1);
     /// if !c.is_empty() {
     ///     // At least one slot is guaranteed to be available for reading.
     /// }
@@ -638,7 +625,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(7).split();
+    /// let (mut p, mut c) = RingBuffer::new(7);
     /// assert!(!c.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(p);
@@ -652,7 +639,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if !c.is_abandoned() {
     ///     // Right now, the producer might still be alive, but it might as well not be
     ///     // if another thread has just dropped it.
@@ -663,7 +650,7 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (p, c) = RingBuffer::<i32>::new(1).split();
+    /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if c.is_abandoned() {
     ///     // The producer does definitely not exist anymore.
     /// }
