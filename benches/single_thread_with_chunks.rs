@@ -36,7 +36,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     group.throughput(criterion::Throughput::Bytes(CHUNK_SIZE as u64));
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
 
-    let (mut p, mut c) = RingBuffer::<u8>::with_chunks(1000, CHUNK_SIZE).split();
+    let (mut p, mut c) = RingBuffer::<u8>::new(1000 * CHUNK_SIZE).split();
 
     add_function(&mut group, "1-pop", |data| {
         let mut result = [0; CHUNK_SIZE];

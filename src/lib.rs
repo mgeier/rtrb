@@ -99,9 +99,6 @@ impl<T> RingBuffer<T> {
     /// The returned `RingBuffer` is typically immediately split into
     /// the [`Producer`] and the [`Consumer`] side by [`split()`](RingBuffer::split).
     ///
-    /// If you want guaranteed wrap-around behavior,
-    /// use [`with_chunks()`](RingBuffer::with_chunks).
-    ///
     /// # Examples
     ///
     /// ```
@@ -158,8 +155,6 @@ impl<T> RingBuffer<T> {
     /// This drops all elements that are currently in the queue
     /// (running their destructors if `T` implements [`Drop`]) and
     /// resets the internal read and write positions to the beginning of the buffer.
-    ///
-    /// This also resets the guarantees given by [`with_chunks()`](RingBuffer::with_chunks).
     ///
     /// Exclusive access to both [`Producer`] and [`Consumer`] is needed for this operation.
     /// They can be moved between threads, for example, with a `RingBuffer<Producer<T>>`
