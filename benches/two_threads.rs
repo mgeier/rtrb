@@ -14,9 +14,9 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
 ) where
     P: Send + 'static,
     C: Send + 'static,
-    Create: Fn(usize) -> (P, C) + Copy,
+    Create: Fn(usize) -> (P, C),
     Push: Fn(&mut P, u8) -> bool + Send + Copy + 'static,
-    Pop: Fn(&mut C) -> Option<u8> + Send + Copy + 'static,
+    Pop: Fn(&mut C) -> Option<u8> + Send + 'static,
     M: criterion::measurement::Measurement<Value = std::time::Duration>,
 {
     // Just a quick check if the ring buffer works as expected:

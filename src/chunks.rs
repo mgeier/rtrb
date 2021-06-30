@@ -76,7 +76,7 @@
 //! The following examples show the [`Producer`] side;
 //! similar patterns can of course be used with [`Consumer::read_chunk()`] as well.
 //! Furthermore, the examples use [`Producer::write_chunk()`],
-//! which requires the trait bounds `T: Copy + Default`.
+//! which requires the trait bound `T: Default`.
 //! If that's too restrictive or if you want to squeeze out the last bit of performance,
 //! you can use [`Producer::write_chunk_uninit()`] instead,
 //! but this will force you to write some `unsafe` code.
@@ -139,7 +139,7 @@
 //!
 //! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: &mut I) -> usize
 //! where
-//!     T: Copy + Default,
+//!     T: Default,
 //!     I: Iterator<Item = T>,
 //! {
 //!     let n = match iter.size_hint() {
@@ -184,10 +184,6 @@ impl<T> Producer<T> {
     /// This has to be explicitly done by calling [`WriteChunk::commit()`],
     /// [`WriteChunk::commit_iterated()`] or [`WriteChunk::commit_all()`].
     ///
-    /// The type parameter `T` has a trait bound of [`Copy`],
-    /// which makes sure that no destructors are called at any time
-    /// (because it implies [`!Drop`](Drop)).
-    ///
     /// For an unsafe alternative that has no restrictions on `T`,
     /// see [`Producer::write_chunk_uninit()`].
     ///
@@ -196,7 +192,7 @@ impl<T> Producer<T> {
     /// See the documentation of the [`chunks`](crate::chunks#examples) module for more examples.
     pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
-        T: Copy + Default,
+        T: Default,
     {
         self.write_chunk_uninit(n).map(WriteChunk::from)
     }
@@ -369,7 +365,7 @@ pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
 impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     /// Fills all slots with the [`Default`] value.
     fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
@@ -389,7 +385,7 @@ where
 
 impl<T> WriteChunk<'_, T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     /// Returns two slices for writing to the requested slots.
     ///
@@ -442,7 +438,7 @@ where
 
 impl<'a, T> Iterator for WriteChunk<'a, T>
 where
-    T: Copy + Default,
+    T: Default,
 {
     type Item = &'a mut T;
 
