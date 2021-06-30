@@ -271,7 +271,7 @@ impl<T> Eq for RingBuffer<T> {}
 /// that no more data will be produced.
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
     /// A reference to the ring buffer.
     buffer: Arc<RingBuffer<T>>,

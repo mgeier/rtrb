@@ -360,7 +360,7 @@ impl<T> Consumer<T> {
 /// [`commit()`](WriteChunk::commit),
 /// [`commit_iterated()`](WriteChunk::commit_iterated) or
 /// [`commit_all()`](WriteChunk::commit_all).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
 impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
@@ -470,7 +470,7 @@ where
 /// [`commit()`](WriteChunkUninit::commit),
 /// [`commit_iterated()`](WriteChunkUninit::commit_iterated) or
 /// [`commit_all()`](WriteChunkUninit::commit_all).
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
     first_len: usize,
