@@ -183,6 +183,9 @@ impl<T> Producer<T> {
     /// to be read by the [`Consumer`].
     /// This has to be explicitly done by calling [`WriteChunk::commit()`],
     /// [`WriteChunk::commit_iterated()`] or [`WriteChunk::commit_all()`].
+    /// If items are written but *not* committed afterwards,
+    /// they will *not* become available for reading and
+    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     ///
     /// For an unsafe alternative that has no restrictions on `T`,
     /// see [`Producer::write_chunk_uninit()`].
@@ -210,6 +213,9 @@ impl<T> Producer<T> {
     /// This has to be explicitly done by calling [`WriteChunkUninit::commit()`],
     /// [`WriteChunkUninit::commit_iterated()`] or
     /// [`WriteChunkUninit::commit_all()`].
+    /// If items are written but *not* committed afterwards,
+    /// they will *not* become available for reading and
+    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     ///
     /// # Safety
     ///
@@ -259,13 +265,13 @@ impl<T> Consumer<T> {
     /// to be written again by the [`Producer`].
     /// This has to be explicitly done by calling [`ReadChunk::commit()`],
     /// [`ReadChunk::commit_iterated()`] or [`ReadChunk::commit_all()`].
+    /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
     /// You can "peek" at the contained values by simply
     /// not calling any of the "commit" methods.
     ///
     /// # Examples
     ///
-    /// Items are dropped when [`ReadChunk::commit()`], [`ReadChunk::commit_iterated()`]
-    /// or [`ReadChunk::commit_all()`] is called
+    /// The following example shows that items are dropped when "committed"
     /// (which is only relevant if `T` implements [`Drop`]).
     ///
     /// ```
@@ -360,6 +366,9 @@ impl<T> Consumer<T> {
 /// [`commit()`](WriteChunk::commit),
 /// [`commit_iterated()`](WriteChunk::commit_iterated) or
 /// [`commit_all()`](WriteChunk::commit_all).
+/// If items are written but *not* committed afterwards,
+/// they will *not* become available for reading and
+/// they will be leaked (which is only relevant if `T` implements [`Drop`]).
 #[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
@@ -470,6 +479,9 @@ where
 /// [`commit()`](WriteChunkUninit::commit),
 /// [`commit_iterated()`](WriteChunkUninit::commit_iterated) or
 /// [`commit_all()`](WriteChunkUninit::commit_all).
+/// If items are written but *not* committed afterwards,
+/// they will *not* become available for reading and
+/// they will be leaked (which is only relevant if `T` implements [`Drop`]).
 #[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunkUninit<'a, T> {
     first_ptr: *mut T,
@@ -580,6 +592,7 @@ impl<'a, T> Iterator for WriteChunkUninit<'a, T> {
 /// If desired, this has to be explicitly done by calling [`commit()`](ReadChunk::commit),
 /// [`commit_iterated()`](ReadChunk::commit_iterated) or [`commit_all()`](ReadChunk::commit_all).
 /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
+/// You can "peek" at the contained values by simply not calling any of the "commit" methods.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReadChunk<'a, T> {
     first_ptr: *const T,
