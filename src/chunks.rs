@@ -250,6 +250,48 @@ impl<T> Producer<T> {
             iterated: 0,
         })
     }
+
+    /// Adds items by repeatedly calling a function.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::{RingBuffer, PopError};
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(3);
+    ///
+    /// let mut value = 0;
+    /// assert_eq!(p.produce_chunk_with(2, || {
+    ///     value += 10;
+    ///     Some(value)
+    /// }), Ok(2));
+    /// assert_eq!(c.pop(), Ok(10));
+    /// assert_eq!(c.pop(), Ok(20));
+    /// assert_eq!(c.pop(), Err(PopError::Empty));
+    /// ```
+    pub fn produce_chunk_with<F>(&mut self, n: usize, mut f: F) -> Result<usize, ChunkError>
+    where
+        F: FnMut() -> Option<T>,
+    {
+        let mut chunk = self.write_chunk_uninit(n)?;
+        'outer: for &(ptr, len) in &[
+            (chunk.first_ptr, chunk.first_len),
+            (chunk.second_ptr, chunk.second_len),
+        ] {
+            for i in 0..len {
+                match f() {
+                    Some(item) => {
+                        // Safety: Items are initialized
+                        unsafe { ptr.add(i).write(item) };
+                        chunk.iterated += 1;
+                    }
+                    None => break 'outer,
+                }
+            }
+        }
+        // Safety: slots have been initialized above
+        Ok(unsafe { chunk.commit_iterated() })
+    }
 }
 
 impl<T> Consumer<T> {
@@ -343,6 +385,47 @@ impl<T> Consumer<T> {
             consumer: self,
             iterated: 0,
         })
+    }
+
+    /// Consumes multiple items, passing each one to a given function.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(3);
+    /// assert_eq!(p.push(10), Ok(()));
+    /// assert_eq!(p.push(20), Ok(()));
+    /// assert_eq!(p.push(30), Ok(()));
+    ///
+    /// let mut target = vec![];
+    /// assert_eq!(c.consume_chunk_with(2, |item| {
+    ///     target.push(item);
+    ///     true
+    /// }), Ok(2));
+    /// assert_eq!(target, [10, 20]);
+    /// assert_eq!(c.pop(), Ok(30));
+    /// ```
+    pub fn consume_chunk_with<F>(&mut self, n: usize, mut f: F) -> Result<usize, ChunkError>
+    where
+        F: FnMut(T) -> bool,
+    {
+        let mut chunk = self.read_chunk(n)?;
+        'outer: for &(ptr, len) in &[
+            (chunk.first_ptr, chunk.first_len),
+            (chunk.second_ptr, chunk.second_len),
+        ] {
+            for i in 0..len {
+                // Safety: Items are initialized
+                let item = unsafe { ptr.add(i).read() };
+                chunk.iterated += 1;
+                if !f(item) {
+                    break 'outer;
+                }
+            }
+        }
+        Ok(chunk.commit_iterated())
     }
 }
 
