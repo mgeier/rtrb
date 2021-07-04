@@ -4,7 +4,6 @@
 //! but the used chunk size and capacity could be.
 
 use std::io::{Read, Write};
-use std::mem::MaybeUninit;
 
 use criterion::{black_box, criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
@@ -92,32 +91,17 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     add_function(&mut group, "3-iterate-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let _ = p.write(&data).unwrap();
-        let mut chunk = c.read_chunk(data.len()).unwrap();
-        for (dst, src) in result.iter_mut().zip(&mut chunk) {
-            *dst = *src;
+        let chunk = c.read_chunk(data.len()).unwrap();
+        for (dst, src) in result.iter_mut().zip(chunk) {
+            *dst = src;
         }
-        chunk.commit_iterated();
         result
     });
 
     add_function(&mut group, "3-iterate-write", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let mut chunk = p.write_chunk(data.len()).unwrap();
-        for (src, dst) in data.iter().zip(&mut chunk) {
-            *dst = *src;
-        }
-        chunk.commit_iterated();
-        let _ = c.read(&mut result).unwrap();
-        result
-    });
-
-    add_function(&mut group, "3-iterate-write-uninit", |data| {
-        let mut result = [0; CHUNK_SIZE];
-        let mut chunk = p.write_chunk_uninit(data.len()).unwrap();
-        for (src, dst) in data.iter().zip(&mut chunk) {
-            *dst = MaybeUninit::new(*src);
-        }
-        unsafe { chunk.commit_iterated() };
+        let chunk = p.write_chunk_uninit(data.len()).unwrap();
+        chunk.populate(&mut data.iter().copied());
         let _ = c.read(&mut result).unwrap();
         result
     });

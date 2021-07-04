@@ -70,23 +70,13 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "3-iterate-read", |i| {
         p.push(i).unwrap();
-        let mut chunk = c.read_chunk(1).unwrap();
-        let result = *(&mut chunk).next().unwrap();
-        chunk.commit_iterated();
-        result
+        let chunk = c.read_chunk(1).unwrap();
+        chunk.into_iter().next().unwrap()
     });
 
     add_function(&mut group, "3-iterate-write", |i| {
-        let mut chunk = p.write_chunk(1).unwrap();
-        *(&mut chunk).next().unwrap() = i;
-        chunk.commit_iterated();
-        c.pop().unwrap()
-    });
-
-    add_function(&mut group, "3-iterate-write-uninit", |i| {
-        let mut chunk = p.write_chunk_uninit(1).unwrap();
-        *(&mut chunk).next().unwrap() = MaybeUninit::new(i);
-        unsafe { chunk.commit_iterated() };
+        let chunk = p.write_chunk_uninit(1).unwrap();
+        chunk.populate(&mut std::iter::once(i));
         c.pop().unwrap()
     });
 
