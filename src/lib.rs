@@ -699,7 +699,7 @@ impl<T> Consumer<T> {
 /// ```
 pub trait CopyToUninit<T: Copy> {
     /// Copies contents to a possibly uninitialized slice.
-    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]);
+    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) -> &mut [T];
 }
 
 impl<T: Copy> CopyToUninit<T> for [T] {
@@ -708,14 +708,17 @@ impl<T: Copy> CopyToUninit<T> for [T] {
     /// # Panics
     ///
     /// This function will panic if the two slices have different lengths.
-    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) {
+    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) -> &mut [T] {
         assert_eq!(
             self.len(),
             dst.len(),
             "source slice length does not match destination slice length"
         );
         let dst_ptr = dst.as_mut_ptr() as *mut _;
-        unsafe { self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len()) };
+        unsafe {
+            self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len());
+            core::slice::from_raw_parts_mut(dst_ptr, self.len())
+        }
     }
 }
 
