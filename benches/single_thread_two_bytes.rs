@@ -110,7 +110,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     add_function(&mut group, "3-iterate-write", |data| {
         let mut result = [0; 2];
         let chunk = p.write_chunk_uninit(data.len()).unwrap();
-        chunk.populate(&mut data.iter().copied());
+        chunk.fill_from_iter(&mut data.iter().copied());
         for i in result.iter_mut() {
             *i = c.pop().unwrap();
         }

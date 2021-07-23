@@ -76,7 +76,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "3-iterate-write", |i| {
         let chunk = p.write_chunk_uninit(1).unwrap();
-        chunk.populate(&mut std::iter::once(i));
+        chunk.fill_from_iter(&mut std::iter::once(i));
         c.pop().unwrap()
     });
 

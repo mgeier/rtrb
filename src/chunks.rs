@@ -1,7 +1,7 @@
 //! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
 //! Multiple items at once can be moved from an iterator into the ring buffer by using
-//! [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::populate()`].
+//! [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::fill_from_iter()`].
 //! Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
 //! [`WriteChunkUninit::as_mut_slices()`], which requires writing some `unsafe` code.
 //! To avoid that, [`Producer::write_chunk()`] can be used,
@@ -24,7 +24,7 @@
 //! let (mut producer, mut consumer) = RingBuffer::new(5);
 //!
 //! if let Ok(chunk) = producer.write_chunk_uninit(4) {
-//!     chunk.populate([10, 11, 12]);
+//!     chunk.fill_from_iter([10, 11, 12]);
 //!     // Note that we requested 4 slots but we've only written to 3 of them!
 //! } else {
 //!     unreachable!();
@@ -87,7 +87,7 @@
 //!         Err(TooFewSlots(0)) => return 0,
 //!         Err(TooFewSlots(n)) => dst.write_chunk_uninit(n).unwrap(),
 //!     };
-//!     write_chunk.populate(read_chunk)
+//!     write_chunk.fill_from_iter(read_chunk)
 //! }
 //! ```
 //!
@@ -96,7 +96,8 @@
 //! ```
 //! # use rtrb::{Consumer, Producer};
 //! fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
-//!     dst.write_chunk_uninit(dst.slots()).unwrap().populate(src.read_chunk(src.slots()).unwrap())
+//!
+//!     dst.write_chunk_uninit(dst.slots()).unwrap().fill_from_iter(src.read_chunk(src.slots()).unwrap())
 //! }
 //! ```
 //!
@@ -109,7 +110,7 @@
 //! If that's too restrictive or if you want to squeeze out the last bit of performance,
 //! you can use [`Producer::write_chunk_uninit()`] instead,
 //! but this will force you to write some `unsafe` code
-//! (except when using [`WriteChunkUninit::populate()`]).
+//! (except when using [`WriteChunkUninit::fill_from_iter()`]).
 //!
 //! Copy a whole slice of items into the ring buffer, but only if space permits
 //! (if not, the input slice is returned as an error):
@@ -184,7 +185,7 @@
 //!         // As above, this will always succeed:
 //!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
 //!     };
-//!     chunk.populate(iter)
+//!     chunk.fill_from_iter(iter)
 //! }
 //! ```
 
@@ -214,7 +215,7 @@ impl<T> Producer<T> {
     /// see [`Producer::write_chunk_uninit()`].
     ///
     /// If items are supposed to be moved from an iterator into the ring buffer,
-    /// [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::populate()`] can be used.
+    /// [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::fill_from_iter()`] can be used.
     ///
     /// # Examples
     ///
@@ -238,13 +239,13 @@ impl<T> Producer<T> {
     /// to be read by the [`Consumer`] by calling [`WriteChunkUninit::commit()`]
     /// or [`WriteChunkUninit::commit_all()`].
     ///
-    /// Alternatively, [`WriteChunkUninit::populate()`] can be used
+    /// Alternatively, [`WriteChunkUninit::fill_from_iter()`] can be used
     /// to move items from an iterator into the available slots.
     /// All moved items are automatically made available to be read by the [`Consumer`].
     ///
     /// # Safety
     ///
-    /// This function itself is safe, as is [`WriteChunkUninit::populate()`].
+    /// This function itself is safe, as is [`WriteChunkUninit::fill_from_iter()`].
     /// However, when using [`WriteChunkUninit::as_mut_slices()`],
     /// the user has to make sure that the relevant slots have been initialized
     /// before calling [`WriteChunkUninit::commit()`] or [`WriteChunkUninit::commit_all()`].
@@ -332,7 +333,7 @@ impl<T> Consumer<T> {
 ///
 /// To obtain uninitialized slots, use [`Producer::write_chunk_uninit()`] instead,
 /// which also allows moving items from an iterator into the ring buffer
-/// by means of [`WriteChunkUninit::populate()`].
+/// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
 
@@ -495,7 +496,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// let (mut p, mut c) = RingBuffer::new(4);
     ///
     /// if let Ok(chunk) = p.write_chunk_uninit(3) {
-    ///     assert_eq!(chunk.populate([10, 20]), 2);
+    ///     assert_eq!(chunk.fill_from_iter([10, 20]), 2);
     /// } else {
     ///     unreachable!();
     /// }
@@ -516,7 +517,7 @@ impl<T> WriteChunkUninit<'_, T> {
     ///
     /// let mut it = vec![10, 20, 30].into_iter();
     /// if let Ok(chunk) = p.write_chunk_uninit(2) {
-    ///     assert_eq!(chunk.populate(&mut it), 2);
+    ///     assert_eq!(chunk.fill_from_iter(&mut it), 2);
     /// } else {
     ///     unreachable!();
     /// }
@@ -525,7 +526,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// assert_eq!(c.pop(), Err(PopError::Empty));
     /// assert_eq!(it.next(), Some(30));
     /// ```
-    pub fn populate<I>(self, iter: I) -> usize
+    pub fn fill_from_iter<I>(self, iter: I) -> usize
     where
         I: IntoIterator<Item = T>,
     {
