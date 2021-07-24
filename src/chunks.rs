@@ -72,32 +72,11 @@
 //! The iterator API can be used to move items from one ring buffer to another:
 //!
 //! ```
-//! use rtrb::{Consumer, Producer, chunks::ChunkError::TooFewSlots};
+//! use rtrb::{Consumer, Producer};
 //!
-//! fn move_at_most_n_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>, n: usize) -> usize {
-//!     let read_chunk = match src.read_chunk(n) {
-//!         Ok(chunk) => chunk,
-//!         // Optional optimization:
-//!         Err(TooFewSlots(0)) => return 0,
-//!         Err(TooFewSlots(n)) => src.read_chunk(n).unwrap(),
-//!     };
-//!     let write_chunk = match dst.write_chunk_uninit(read_chunk.len()) {
-//!         Ok(chunk) => chunk,
-//!         // Optional optimization:
-//!         Err(TooFewSlots(0)) => return 0,
-//!         Err(TooFewSlots(n)) => dst.write_chunk_uninit(n).unwrap(),
-//!     };
-//!     write_chunk.fill_from_iter(read_chunk)
-//! }
-//! ```
-//!
-//! If the number of items should not be limited, a quick-and-dirty one-liner can be used:
-//!
-//! ```
-//! # use rtrb::{Consumer, Producer};
 //! fn move_items<T>(src: &mut Consumer<T>, dst: &mut Producer<T>) -> usize {
-//!
-//!     dst.write_chunk_uninit(dst.slots()).unwrap().fill_from_iter(src.read_chunk(src.slots()).unwrap())
+//!     let n = src.slots().min(dst.slots());
+//!     dst.write_chunk_uninit(n).unwrap().fill_from_iter(src.read_chunk(n).unwrap())
 //! }
 //! ```
 //!
