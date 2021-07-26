@@ -466,7 +466,7 @@ impl<T> Producer<T> {
 /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
 /// multiple elements at once can be read with [`Consumer::read_chunk()`].
 ///
-/// The number of free slots currently available for reading can be obtained with
+/// The number of slots currently available for reading can be obtained with
 /// [`Consumer::slots()`].
 ///
 /// When the `Consumer` is dropped, [`Producer::is_abandoned()`] will return `true`.

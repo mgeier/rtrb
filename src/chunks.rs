@@ -1,7 +1,7 @@
 //! Writing and reading multiple items at once into and from a [`RingBuffer`].
 //!
 //! Multiple items at once can be moved from an iterator into the ring buffer by using
-//! [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::fill_from_iter()`].
+//! [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`].
 //! Alternatively, mutable access to the (uninitialized) slots of the chunk can be obtained with
 //! [`WriteChunkUninit::as_mut_slices()`], which requires writing some `unsafe` code.
 //! To avoid that, [`Producer::write_chunk()`] can be used,
@@ -194,7 +194,8 @@ impl<T> Producer<T> {
     /// see [`Producer::write_chunk_uninit()`].
     ///
     /// If items are supposed to be moved from an iterator into the ring buffer,
-    /// [`Producer::write_chunk_uninit()`] and [`WriteChunkUninit::fill_from_iter()`] can be used.
+    /// [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`]
+    /// can be used.
     ///
     /// # Examples
     ///
