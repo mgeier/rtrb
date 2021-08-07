@@ -128,7 +128,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "4-write", |data| {
         let mut result = [0; 2];
-        let _ = p.write(&data).unwrap();
+        let _ = p.write(data).unwrap();
         for i in result.iter_mut() {
             *i = c.pop().unwrap();
         }

@@ -39,7 +39,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "1-pop", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(&data).unwrap();
+        let _ = p.write(data).unwrap();
         for i in result.iter_mut() {
             *i = c.pop().unwrap();
         }
@@ -57,7 +57,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "2-slice-read", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(&data).unwrap();
+        let _ = p.write(data).unwrap();
         let chunk = c.read_chunk(data.len()).unwrap();
         let (first, second) = chunk.as_slices();
         result.copy_from_slice(first);
@@ -90,7 +90,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "3-iterate-read", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(&data).unwrap();
+        let _ = p.write(data).unwrap();
         let chunk = c.read_chunk(data.len()).unwrap();
         for (dst, src) in result.iter_mut().zip(chunk) {
             *dst = src;
@@ -108,7 +108,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "4-write-read", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(&data).unwrap();
+        let _ = p.write(data).unwrap();
         let _ = c.read(&mut result).unwrap();
         result
     });
