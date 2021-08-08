@@ -115,6 +115,7 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
     #[allow(clippy::new_ret_no_self)]
+    #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
         let buffer = Arc::new(RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
@@ -295,6 +296,9 @@ impl<T> Producer<T> {
     ///
     /// The element is *moved* into the ring buffer and its slot
     /// is made available to be read by the [`Consumer`].
+    ///
+    /// # Errors
+    ///
     /// If the queue is full, the element is returned back as an error.
     ///
     /// # Examples
@@ -434,7 +438,7 @@ impl<T> Producer<T> {
 
     /// Get the tail position for writing the next slot, if available.
     ///
-    /// This is a strict subset of the functionality implemented in write_chunk_uninit().
+    /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
         let tail = self.tail.get();
@@ -497,6 +501,9 @@ impl<T> Consumer<T> {
     ///
     /// The element is *moved* out of the ring buffer and its slot
     /// is made available to be filled by the [`Producer`] again.
+    ///
+    /// # Errors
+    ///
     /// If the queue is empty, an error is returned.
     ///
     /// # Examples
@@ -532,6 +539,8 @@ impl<T> Consumer<T> {
     }
 
     /// Attempts to read an element from the queue without removing it.
+    ///
+    /// # Errors
     ///
     /// If the queue is empty, an error is returned.
     ///
@@ -667,7 +676,7 @@ impl<T> Consumer<T> {
 
     /// Get the head position for reading the next slot, if available.
     ///
-    /// This is a strict subset of the functionality implemented in read_chunk().
+    /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is immplemented separately.
     fn next_head(&self) -> Option<usize> {
         let head = self.head.get();

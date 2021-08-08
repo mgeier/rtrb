@@ -1,3 +1,4 @@
+use std::convert::TryInto as _;
 use std::sync::{Arc, Barrier};
 
 use criterion::{black_box, criterion_group, criterion_main};
@@ -35,7 +36,7 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
     group.bench_function(["large", id].concat(), |b| {
         b.iter_custom(|iters| {
             // Queue is so long that there is no contention between threads.
-            let (mut p, mut c) = create(2 * iters as usize);
+            let (mut p, mut c) = create((2 * iters).try_into().unwrap());
             for _ in 0..iters {
                 push(&mut p, 42);
             }

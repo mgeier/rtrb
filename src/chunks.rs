@@ -181,10 +181,6 @@ use crate::RingBuffer;
 impl<T> Producer<T> {
     /// Returns `n` slots (initially containing their [`Default`] value) for writing.
     ///
-    /// If not enough slots are available, an error
-    /// (containing the number of available slots) is returned.
-    /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
-    ///
     /// [`WriteChunk::as_mut_slices()`] provides mutable access to the slots.
     /// After writing to those slots, they explicitly have to be made available
     /// to be read by the [`Consumer`] by calling [`WriteChunk::commit()`]
@@ -196,6 +192,12 @@ impl<T> Producer<T> {
     /// If items are supposed to be moved from an iterator into the ring buffer,
     /// [`Producer::write_chunk_uninit()`] followed by [`WriteChunkUninit::fill_from_iter()`]
     /// can be used.
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
     ///
     /// # Examples
     ///
@@ -209,10 +211,6 @@ impl<T> Producer<T> {
 
     /// Returns `n` (uninitialized) slots for writing.
     ///
-    /// If not enough slots are available, an error
-    /// (containing the number of available slots) is returned.
-    /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
-    ///
     /// [`WriteChunkUninit::as_mut_slices()`] provides mutable access
     /// to the uninitialized slots.
     /// After writing to those slots, they explicitly have to be made available
@@ -222,6 +220,12 @@ impl<T> Producer<T> {
     /// Alternatively, [`WriteChunkUninit::fill_from_iter()`] can be used
     /// to move items from an iterator into the available slots.
     /// All moved items are automatically made available to be read by the [`Consumer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use [`Producer::slots()`] to obtain the number of available slots beforehand.
     ///
     /// # Safety
     ///
@@ -262,10 +266,6 @@ impl<T> Producer<T> {
 impl<T> Consumer<T> {
     /// Returns `n` slots for reading.
     ///
-    /// If not enough slots are available, an error
-    /// (containing the number of available slots) is returned.
-    /// Use [`Consumer::slots()`] to obtain the number of available slots beforehand.
-    ///
     /// [`ReadChunk::as_slices()`] provides immutable access to the slots.
     /// After reading from those slots, they explicitly have to be made available
     /// to be written again by the [`Producer`] by calling [`ReadChunk::commit()`]
@@ -275,6 +275,12 @@ impl<T> Consumer<T> {
     /// because it implements [`IntoIterator`]
     /// ([`ReadChunk::into_iter()`] can be used to explicitly turn it into an [`Iterator`]).
     /// All moved items are automatically made available to be written again by the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough slots are available, an error
+    /// (containing the number of available slots) is returned.
+    /// Use [`Consumer::slots()`] to obtain the number of available slots beforehand.
     ///
     /// # Examples
     ///
@@ -372,21 +378,27 @@ where
     /// Panics if `n` is greater than the number of slots in the chunk.
     pub fn commit(self, n: usize) {
         // Safety: All slots have been initialized in From::from() and there are no destructors.
-        unsafe { self.0.commit(n) }
+        unsafe {
+            self.0.commit(n);
+        }
     }
 
     /// Makes the whole chunk available for reading.
     pub fn commit_all(self) {
         // Safety: All slots have been initialized in From::from().
-        unsafe { self.0.commit_all() }
+        unsafe {
+            self.0.commit_all();
+        }
     }
 
     /// Returns the number of slots in the chunk.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -520,7 +532,9 @@ impl<T> WriteChunkUninit<'_, T> {
                 match iter.next() {
                     Some(item) => {
                         // Safety: It is allowed to write to this memory slot
-                        unsafe { ptr.add(i).write(item) };
+                        unsafe {
+                            ptr.add(i).write(item);
+                        }
                         iterated += 1;
                     }
                     None => break 'outer,
@@ -532,11 +546,13 @@ impl<T> WriteChunkUninit<'_, T> {
     }
 
     /// Returns the number of slots in the chunk.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.first_len + self.second_len
     }
 
     /// Returns `true` if the chunk contains no slots.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.first_len == 0
     }
@@ -566,6 +582,7 @@ impl<T> ReadChunk<'_, T> {
     /// or [`commit_all()`](ReadChunk::commit_all).
     /// Note that this runs the destructor of the committed items (if `T` implements [`Drop`]).
     /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
+    #[must_use]
     pub fn as_slices(&self) -> (&[T], &[T]) {
         (
             unsafe { core::slice::from_raw_parts(self.first_ptr, self.first_len) },
@@ -639,15 +656,15 @@ impl<T> ReadChunk<'_, T> {
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let head = self.consumer.head.get();
         // Safety: head has not yet been incremented
-        let ptr = self.consumer.buffer.slot_ptr(head);
+        let first_ptr = self.consumer.buffer.slot_ptr(head);
         let first_len = self.first_len.min(n);
         for i in 0..first_len {
-            ptr.add(i).drop_in_place();
+            first_ptr.add(i).drop_in_place();
         }
-        let ptr = self.consumer.buffer.data_ptr;
+        let second_ptr = self.consumer.buffer.data_ptr;
         let second_len = self.second_len.min(n - first_len);
         for i in 0..second_len {
-            ptr.add(i).drop_in_place();
+            second_ptr.add(i).drop_in_place();
         }
         let head = self.consumer.buffer.increment(head, n);
         self.consumer.buffer.head.store(head, Ordering::Release);
@@ -656,11 +673,13 @@ impl<T> ReadChunk<'_, T> {
     }
 
     /// Returns the number of slots in the chunk.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.first_len + self.second_len
     }
 
     /// Returns `true` if the chunk contains no slots.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.first_len == 0
     }

@@ -26,7 +26,7 @@ where
         }
         b.iter(|| {
             assert_eq!(f(black_box(&data)), data);
-        })
+        });
     });
 }
 
@@ -83,7 +83,9 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let (first, second) = chunk.as_mut_slices();
         data.copy_to_uninit(first);
         debug_assert!(second.is_empty());
-        unsafe { chunk.commit_all() };
+        unsafe {
+            chunk.commit_all();
+        }
         let _ = c.read(&mut result).unwrap();
         result
     });

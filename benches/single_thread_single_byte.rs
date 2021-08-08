@@ -21,7 +21,7 @@ where
         b.iter(|| {
             assert_eq!(f(black_box(i)), black_box(i));
             i = i.wrapping_add(1);
-        })
+        });
     });
 }
 
@@ -64,7 +64,9 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let mut chunk = p.write_chunk_uninit(1).unwrap();
         let (s, _) = chunk.as_mut_slices();
         s[0] = MaybeUninit::new(i);
-        unsafe { chunk.commit_all() };
+        unsafe {
+            chunk.commit_all();
+        }
         c.pop().unwrap()
     });
 

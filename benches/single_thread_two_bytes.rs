@@ -31,7 +31,7 @@ where
                 assert_eq!(f(black_box(&data)), black_box(data));
             },
             criterion::BatchSize::SmallInput,
-        )
+        );
     });
 }
 
@@ -47,7 +47,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         for &i in data.iter() {
             p.push(i).unwrap();
         }
-        for i in result.iter_mut() {
+        for i in &mut result {
             *i = c.pop().unwrap();
         }
         result
@@ -75,7 +75,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         first.copy_from_slice(&data[..mid]);
         second.copy_from_slice(&data[mid..]);
         chunk.commit_all();
-        for i in result.iter_mut() {
+        for i in &mut result {
             *i = c.pop().unwrap();
         }
         result
@@ -88,8 +88,10 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let mid = first.len();
         data[..mid].copy_to_uninit(first);
         data[mid..].copy_to_uninit(second);
-        unsafe { chunk.commit_all() };
-        for i in result.iter_mut() {
+        unsafe {
+            chunk.commit_all();
+        }
+        for i in &mut result {
             *i = c.pop().unwrap();
         }
         result
@@ -111,7 +113,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
         let mut result = [0; 2];
         let chunk = p.write_chunk_uninit(data.len()).unwrap();
         chunk.fill_from_iter(&mut data.iter().copied());
-        for i in result.iter_mut() {
+        for i in &mut result {
             *i = c.pop().unwrap();
         }
         result
@@ -129,7 +131,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     add_function(&mut group, "4-write", |data| {
         let mut result = [0; 2];
         let _ = p.write(data).unwrap();
-        for i in result.iter_mut() {
+        for i in &mut result {
             *i = c.pop().unwrap();
         }
         result
