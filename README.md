@@ -22,6 +22,14 @@ rtrb = "0.1"
 ```
 
 
+Breaking Changes
+----------------
+
+For a list of breaking changes
+and for instructions how to upgrade between released versions,
+have a look at the [changelog](https://github.com/mgeier/rtrb/releases).
+
+
 Development
 -----------
 
