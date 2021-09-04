@@ -13,6 +13,10 @@
 //! (or by explicitly calling [`ReadChunk::into_iter()`]).
 //! Immutable access to the slots of the chunk can be obtained with [`ReadChunk::as_slices()`].
 //!
+//! If the item type implements [`Copy`], the convenience functions
+//! [`Producer::copy_from_slice()`], [`Consumer::copy_to_slice()`]
+//! and [`Consumer::copy_to_slice_uninit()`] can be used.
+//!
 //! # Examples
 //!
 //! This example uses a single thread for simplicity, but in a real application,
@@ -81,91 +85,20 @@
 //! }
 //! ```
 //!
-//! ## Common Access Patterns
-//!
-//! The following examples show the [`Producer`] side;
-//! similar patterns can of course be used with [`Consumer::read_chunk()`] as well.
-//! Furthermore, the examples use [`Producer::write_chunk_uninit()`],
-//! along with a bit of `unsafe` code.
-//! To avoid this, you can use [`Producer::write_chunk()`] instead,
-//! which requires the trait bound `T: Default` and will lead to a small runtime overhead.
-//!
-//! Copy a whole slice of items into the ring buffer, but only if space permits
-//! (if not, the entire input slice is returned as an error):
+//! If the trait bound `T: Copy` is satisfied,
+//! [`Producer::copy_from_slice()`] and [`Consumer::copy_to_slice()`] can be used.
 //!
 //! ```
-//! use rtrb::{Producer, CopyToUninit};
+//! use rtrb::RingBuffer;
 //!
-//! fn push_entire_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
-//! where
-//!     T: Copy,
-//! {
-//!     if let Ok(mut chunk) = queue.write_chunk_uninit(slice.len()) {
-//!         let (first, second) = chunk.as_mut_slices();
-//!         let mid = first.len();
-//!         slice[..mid].copy_to_uninit(first);
-//!         slice[mid..].copy_to_uninit(second);
-//!         // SAFETY: All slots have been initialized
-//!         unsafe {
-//!             chunk.commit_all();
-//!         }
-//!         Ok(())
-//!     } else {
-//!         Err(slice)
-//!     }
-//! }
-//! ```
-//!
-//! Copy as many items as possible from a given slice, returning the number of copied items:
-//!
-//! ```
-//! use rtrb::{Producer, CopyToUninit, chunks::ChunkError::TooFewSlots};
-//!
-//! fn push_partial_slice<T>(queue: &mut Producer<T>, slice: &[T]) -> usize
-//! where
-//!     T: Copy,
-//! {
-//!     let mut chunk = match queue.write_chunk_uninit(slice.len()) {
-//!         Ok(chunk) => chunk,
-//!         // Remaining slots are returned, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
-//!     };
-//!     let end = chunk.len();
-//!     let (first, second) = chunk.as_mut_slices();
-//!     let mid = first.len();
-//!     slice[..mid].copy_to_uninit(first);
-//!     slice[mid..end].copy_to_uninit(second);
-//!     // SAFETY: All slots have been initialized
-//!     unsafe {
-//!         chunk.commit_all();
-//!     }
-//!     end
-//! }
-//! ```
-//!
-//! Write as many slots as possible, given an iterator
-//! (and return the number of written slots):
-//!
-//! ```
-//! use rtrb::{Producer, chunks::ChunkError::TooFewSlots};
-//!
-//! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
-//! where
-//!     T: Default,
-//!     I: IntoIterator<Item = T>,
-//! {
-//!     let iter = iter.into_iter();
-//!     let n = match iter.size_hint() {
-//!         (_, None) => queue.slots(),
-//!         (_, Some(n)) => n,
-//!     };
-//!     let chunk = match queue.write_chunk_uninit(n) {
-//!         Ok(chunk) => chunk,
-//!         // Remaining slots are returned, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
-//!     };
-//!     chunk.fill_from_iter(iter)
-//! }
+//! let (mut p, mut c) = RingBuffer::new(5);
+//! let source = vec![1, 2, 3, 4, 5, 6];
+//! assert_eq!(p.copy_from_slice(&source), 5);
+//! let mut destination = vec![0; 3];
+//! assert_eq!(c.copy_to_slice(&mut destination), 3);
+//! assert_eq!(destination, [1, 2, 3]);
+//! assert_eq!(c.copy_to_slice(&mut destination), 2);
+//! assert_eq!(destination, [4, 5, 3]);
 //! ```
 
 use core::fmt;
@@ -236,6 +169,10 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let tail = self.tail.get();
 
@@ -260,6 +197,37 @@ impl<T> Producer<T> {
             second_len: n - first_len,
             producer: self,
         })
+    }
+
+    /// Copies as many items as possible from a given slice into the ring buffer.
+    ///
+    /// Returns the number of written items.
+    ///
+    /// The written slots are automatically made available to be read by the [`Consumer`].
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    pub fn copy_from_slice(&mut self, slice: &[T]) -> usize
+    where
+        T: Copy,
+    {
+        let mut chunk = match self.write_chunk_uninit(slice.len()) {
+            Ok(chunk) => chunk,
+            // Remaining slots are returned, this will always succeed:
+            Err(ChunkError::TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
+        };
+        let end = chunk.len();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        slice[..mid].copy_to_uninit(first);
+        slice[mid..end].copy_to_uninit(second);
+        // Safety: All slots have been initialized
+        unsafe {
+            chunk.commit_all();
+        }
+        end
     }
 }
 
@@ -310,6 +278,54 @@ impl<T> Consumer<T> {
             second_len: n - first_len,
             consumer: self,
         })
+    }
+
+    /// Copies as many items as possible from the ring buffer to a given slice.
+    ///
+    /// Returns the number of copied items.
+    ///
+    /// The copied slots are automatically made available to be written again by the [`Producer`].
+    ///
+    /// # Examples
+    ///
+    /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    pub fn copy_to_slice(&mut self, slice: &mut [T]) -> usize
+    where
+        T: Copy,
+    {
+        // Safety: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
+        // However, since we can guarantee that only valid T values will ever be written,
+        // and the reference never leaves our control, it should be fine.
+        unsafe { self.copy_to_slice_uninit(&mut *(slice as *mut [T] as *mut _)) }
+    }
+
+    /// Copies as many items as possible from the ring buffer to a given uninitialized slice.
+    ///
+    /// Returns the number of copied items.
+    ///
+    /// The copied slots are automatically made available to be written again by the [`Producer`].
+    ///
+    /// # Safety
+    ///
+    /// This function is safe, but if the return value is smaller than the size of `slice`,
+    /// the remaining part of it might still contain uninitialized memory.
+    pub fn copy_to_slice_uninit(&mut self, slice: &mut [MaybeUninit<T>]) -> usize
+    where
+        T: Copy,
+    {
+        let chunk = match self.read_chunk(slice.len()) {
+            Ok(chunk) => chunk,
+            // Remaining slots are returned, this will always succeed:
+            Err(ChunkError::TooFewSlots(n)) => self.read_chunk(n).unwrap(),
+        };
+        let end = chunk.len();
+        let (first, second) = chunk.as_slices();
+        let mid = first.len();
+        // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
+        first.copy_to_uninit(&mut slice[..mid]);
+        second.copy_to_uninit(&mut slice[mid..end]);
+        chunk.commit_all();
+        end
     }
 }
 
@@ -761,23 +777,13 @@ impl<'a, T> core::iter::FusedIterator for ReadChunkIntoIter<'a, T> {}
 impl std::io::Write for Producer<u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        use ChunkError::TooFewSlots;
-        let mut chunk = match self.write_chunk_uninit(buf.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
-        };
-        let end = chunk.len();
-        let (first, second) = chunk.as_mut_slices();
-        let mid = first.len();
-        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..mid].copy_to_uninit(first);
-        buf[mid..end].copy_to_uninit(second);
-        // Safety: All slots have been initialized
-        unsafe {
-            chunk.commit_all();
+        if buf.is_empty() {
+            return Ok(0);
         }
-        Ok(end)
+        match self.copy_from_slice(buf) {
+            0 => Err(std::io::ErrorKind::WouldBlock.into()),
+            n => Ok(n),
+        }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -790,20 +796,13 @@ impl std::io::Write for Producer<u8> {
 impl std::io::Read for Consumer<u8> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use ChunkError::TooFewSlots;
-        let chunk = match self.read_chunk(buf.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
-        };
-        let (first, second) = chunk.as_slices();
-        let mid = first.len();
-        let end = chunk.len();
-        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..mid].copy_from_slice(first);
-        buf[mid..end].copy_from_slice(second);
-        chunk.commit_all();
-        Ok(end)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        match self.copy_to_slice(buf) {
+            0 => Err(std::io::ErrorKind::WouldBlock.into()),
+            n => Ok(n),
+        }
     }
 }
 
