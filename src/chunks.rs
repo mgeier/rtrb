@@ -43,6 +43,7 @@
 //! assert_eq!(consumer.peek(), Ok(&12));
 //!
 //! let data = vec![20, 21, 22, 23];
+//! // NB: write_chunk_uninit() could be used for possibly better performance:
 //! if let Ok(mut chunk) = producer.write_chunk(4) {
 //!     let (first, second) = chunk.as_mut_slices();
 //!     let mid = first.len();
@@ -84,29 +85,30 @@
 //!
 //! The following examples show the [`Producer`] side;
 //! similar patterns can of course be used with [`Consumer::read_chunk()`] as well.
-//! Furthermore, the examples use [`Producer::write_chunk()`],
-//! which requires the trait bound `T: Default`.
-//! If that's too restrictive or if you want to squeeze out the last bit of performance,
-//! you can use [`Producer::write_chunk_uninit()`] instead,
-//! but this will force you to write some `unsafe` code
-//! (except when using [`WriteChunkUninit::fill_from_iter()`]).
+//! Furthermore, the examples use [`Producer::write_chunk_uninit()`],
+//! along with a bit of `unsafe` code.
+//! To avoid this, you can use [`Producer::write_chunk()`] instead,
+//! which requires the trait bound `T: Default` and will lead to a small runtime overhead.
 //!
 //! Copy a whole slice of items into the ring buffer, but only if space permits
-//! (if not, the input slice is returned as an error):
+//! (if not, the entire input slice is returned as an error):
 //!
 //! ```
-//! use rtrb::Producer;
+//! use rtrb::{Producer, CopyToUninit};
 //!
 //! fn push_entire_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
 //! where
-//!     T: Copy + Default,
+//!     T: Copy,
 //! {
-//!     if let Ok(mut chunk) = queue.write_chunk(slice.len()) {
+//!     if let Ok(mut chunk) = queue.write_chunk_uninit(slice.len()) {
 //!         let (first, second) = chunk.as_mut_slices();
 //!         let mid = first.len();
-//!         first.copy_from_slice(&slice[..mid]);
-//!         second.copy_from_slice(&slice[mid..]);
-//!         chunk.commit_all();
+//!         slice[..mid].copy_to_uninit(first);
+//!         slice[mid..].copy_to_uninit(second);
+//!         // SAFETY: All slots have been initialized
+//!         unsafe {
+//!             chunk.commit_all();
+//!         }
 //!         Ok(())
 //!     } else {
 //!         Err(slice)
@@ -114,30 +116,30 @@
 //! }
 //! ```
 //!
-//! Copy as many items as possible from a given slice, returning the remainder of the slice
-//! (which will be empty if there was space for all items):
+//! Copy as many items as possible from a given slice, returning the number of copied items:
 //!
 //! ```
-//! use rtrb::{Producer, chunks::ChunkError::TooFewSlots};
+//! use rtrb::{Producer, CopyToUninit, chunks::ChunkError::TooFewSlots};
 //!
-//! fn push_partial_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> &'a [T]
+//! fn push_partial_slice<T>(queue: &mut Producer<T>, slice: &[T]) -> usize
 //! where
-//!     T: Copy + Default,
+//!     T: Copy,
 //! {
-//!     let mut chunk = match queue.write_chunk(slice.len()) {
+//!     let mut chunk = match queue.write_chunk_uninit(slice.len()) {
 //!         Ok(chunk) => chunk,
-//!         // This is an optional optimization if the queue tends to be full:
-//!         Err(TooFewSlots(0)) => return slice,
 //!         // Remaining slots are returned, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk(n).unwrap(),
+//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
 //!     };
 //!     let end = chunk.len();
 //!     let (first, second) = chunk.as_mut_slices();
 //!     let mid = first.len();
-//!     first.copy_from_slice(&slice[..mid]);
-//!     second.copy_from_slice(&slice[mid..end]);
-//!     chunk.commit_all();
-//!     &slice[end..]
+//!     slice[..mid].copy_to_uninit(first);
+//!     slice[mid..end].copy_to_uninit(second);
+//!     // SAFETY: All slots have been initialized
+//!     unsafe {
+//!         chunk.commit_all();
+//!     }
+//!     end
 //! }
 //! ```
 //!
@@ -159,9 +161,7 @@
 //!     };
 //!     let chunk = match queue.write_chunk_uninit(n) {
 //!         Ok(chunk) => chunk,
-//!         // As above, this is an optional optimization:
-//!         Err(TooFewSlots(0)) => return 0,
-//!         // As above, this will always succeed:
+//!         // Remaining slots are returned, this will always succeed:
 //!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
 //!     };
 //!     chunk.fill_from_iter(iter)
