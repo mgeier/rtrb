@@ -708,6 +708,7 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 ///
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
+#[derive(Debug)]
 pub struct ReadChunkIntoIter<'a, T> {
     chunk: ReadChunk<'a, T>,
     iterated: usize,
