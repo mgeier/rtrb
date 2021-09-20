@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rtrb = "0.1"
+rtrb = "0.2"
 ```
 
 
