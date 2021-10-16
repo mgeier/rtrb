@@ -208,6 +208,7 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline]
     pub fn copy_from_slice(&mut self, slice: &[T]) -> usize
     where
         T: Copy,
@@ -289,6 +290,7 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[inline]
     pub fn copy_to_slice(&mut self, slice: &mut [T]) -> usize
     where
         T: Copy,
@@ -309,6 +311,7 @@ impl<T> Consumer<T> {
     ///
     /// This function is safe, but if the return value is smaller than the size of `slice`,
     /// the remaining part of it might still contain uninitialized memory.
+    #[inline]
     pub fn copy_to_slice_uninit(&mut self, slice: &mut [MaybeUninit<T>]) -> usize
     where
         T: Copy,
