@@ -125,7 +125,7 @@ impl<T> RingBuffer<T>{
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        Self::with_notifier(capacity)
+        Self::with_reactor(capacity)
     }
 }
 impl<T,U:Reactor> RingBuffer<T,U> {
@@ -150,7 +150,7 @@ impl<T,U:Reactor> RingBuffer<T,U> {
     /// ```
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    fn with_notifier(capacity: usize) -> (Producer<T,U>, Consumer<T,U>) {
+    fn with_reactor(capacity: usize) -> (Producer<T,U>, Consumer<T,U>) {
         let buffer = Arc::new(RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),

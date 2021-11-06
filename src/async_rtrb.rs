@@ -27,7 +27,7 @@ impl<T> RingBuffer<T>{
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new_async(capacity: usize) -> (Producer<T,ReadWriteReactor>, Consumer<T,ReadWriteReactor>) {
-        RingBuffer::<T,ReadWriteReactor>::with_notifier(capacity)
+        RingBuffer::<T,ReadWriteReactor>::with_reactor(capacity)
     }
 }
 
