@@ -172,13 +172,13 @@ use core::fmt;
 use core::mem::MaybeUninit;
 use core::sync::atomic::Ordering;
 
-use crate::{Consumer, CopyToUninit, Producer};
+use crate::{Consumer, CopyToUninit, DummyReactor, Reactor, Producer};
 
 // This is used in the documentation.
 #[allow(unused_imports)]
 use crate::RingBuffer;
 
-impl<T> Producer<T> {
+impl<T,U:Reactor> Producer<T,U> {
     /// Returns `n` slots (initially containing their [`Default`] value) for writing.
     ///
     /// [`WriteChunk::as_mut_slices()`] provides mutable access to the slots.
@@ -202,7 +202,7 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
+    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T,U>, ChunkError>
     where
         T: Default,
     {
@@ -236,7 +236,7 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
+    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T,U>, ChunkError> {
         let tail = self.tail.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -263,7 +263,7 @@ impl<T> Producer<T> {
     }
 }
 
-impl<T> Consumer<T> {
+impl<T,U:Reactor> Consumer<T,U> {
     /// Returns `n` slots for reading.
     ///
     /// [`ReadChunk::as_slices()`] provides immutable access to the slots.
@@ -285,7 +285,7 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T,U>, ChunkError> {
         let head = self.head.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -321,14 +321,14 @@ impl<T> Consumer<T> {
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
+pub struct WriteChunk<'a, T,U:Reactor = DummyReactor>(WriteChunkUninit<'a, T,U>);
 
-impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
+impl<'a, T,U:Reactor> From<WriteChunkUninit<'a, T,U>> for WriteChunk<'a, T,U>
 where
     T: Default,
 {
     /// Fills all slots with the [`Default`] value.
-    fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
+    fn from(chunk: WriteChunkUninit<'a, T,U>) -> Self {
         for i in 0..chunk.first_len {
             unsafe {
                 chunk.first_ptr.add(i).write(Default::default());
@@ -343,7 +343,7 @@ where
     }
 }
 
-impl<T> WriteChunk<'_, T>
+impl<T,U:Reactor> WriteChunk<'_, T,U>
 where
     T: Default,
 {
@@ -408,15 +408,15 @@ where
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunkUninit<'a, T> {
-    first_ptr: *mut T,
-    first_len: usize,
-    second_ptr: *mut T,
-    second_len: usize,
-    producer: &'a Producer<T>,
+pub struct WriteChunkUninit<'a, T,U:Reactor = DummyReactor> {
+    pub(crate) first_ptr: *mut T,
+    pub(crate) first_len: usize,
+    pub(crate) second_ptr: *mut T,
+    pub(crate) second_len: usize,
+    pub(crate) producer: &'a mut Producer<T,U>,
 }
 
-impl<T> WriteChunkUninit<'_, T> {
+impl<T,U:Reactor> WriteChunkUninit<'_, T,U> {
     /// Returns two slices for writing to the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -468,6 +468,7 @@ impl<T> WriteChunkUninit<'_, T> {
         let tail = self.producer.buffer.increment(self.producer.tail.get(), n);
         self.producer.buffer.tail.store(tail, Ordering::Release);
         self.producer.tail.set(tail);
+        self.producer.buffer.reactor.pushed(n);
         n
     }
 
@@ -562,15 +563,15 @@ impl<T> WriteChunkUninit<'_, T> {
 ///
 /// This is returned from [`Consumer::read_chunk()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct ReadChunk<'a, T> {
-    first_ptr: *const T,
-    first_len: usize,
-    second_ptr: *const T,
-    second_len: usize,
-    consumer: &'a mut Consumer<T>,
+pub struct ReadChunk<'a, T,U:Reactor = DummyReactor> {
+    pub(crate) first_ptr: *const T,
+    pub(crate) first_len: usize,
+    pub(crate) second_ptr: *const T,
+    pub(crate) second_len: usize,
+    pub(crate) consumer: &'a mut Consumer<T,U>,
 }
 
-impl<T> ReadChunk<'_, T> {
+impl<T,U:Reactor> ReadChunk<'_, T,U> {
     /// Returns two slices for reading from the requested slots.
     ///
     /// The first slice can only be empty if `0` slots have been requested.
@@ -669,6 +670,7 @@ impl<T> ReadChunk<'_, T> {
         let head = self.consumer.buffer.increment(head, n);
         self.consumer.buffer.head.store(head, Ordering::Release);
         self.consumer.head.set(head);
+        self.consumer.buffer.reactor.popped(n);
         n
     }
 
@@ -685,9 +687,9 @@ impl<T> ReadChunk<'_, T> {
     }
 }
 
-impl<'a, T> IntoIterator for ReadChunk<'a, T> {
+impl<'a, T,U:Reactor> IntoIterator for ReadChunk<'a, T,U> {
     type Item = T;
-    type IntoIter = ReadChunkIntoIter<'a, T>;
+    type IntoIter = ReadChunkIntoIter<'a, T,U>;
 
     /// Turns a [`ReadChunk`] into an iterator.
     ///
@@ -709,12 +711,12 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
 #[derive(Debug)]
-pub struct ReadChunkIntoIter<'a, T> {
-    chunk: ReadChunk<'a, T>,
+pub struct ReadChunkIntoIter<'a, T,U:Reactor> {
+    chunk: ReadChunk<'a, T,U>,
     iterated: usize,
 }
 
-impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
+impl<'a, T,U:Reactor> Drop for ReadChunkIntoIter<'a, T,U> {
     /// Makes all iterated slots available for writing again.
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
@@ -725,10 +727,11 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
             .increment(consumer.head.get(), self.iterated);
         consumer.buffer.head.store(head, Ordering::Release);
         consumer.head.set(head);
+        consumer.buffer.reactor.popped(self.iterated);
     }
 }
 
-impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
+impl<'a, T,U:Reactor> Iterator for ReadChunkIntoIter<'a, T,U> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -753,12 +756,12 @@ impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for ReadChunkIntoIter<'a, T> {}
+impl<'a, T,U:Reactor> ExactSizeIterator for ReadChunkIntoIter<'a, T,U> {}
 
-impl<'a, T> core::iter::FusedIterator for ReadChunkIntoIter<'a, T> {}
+impl<'a, T,U:Reactor> core::iter::FusedIterator for ReadChunkIntoIter<'a, T,U> {}
 
 #[cfg(feature = "std")]
-impl std::io::Write for Producer<u8> {
+impl<U:Reactor> std::io::Write for Producer<u8,U> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         use ChunkError::TooFewSlots;
@@ -787,7 +790,7 @@ impl std::io::Write for Producer<u8> {
 }
 
 #[cfg(feature = "std")]
-impl std::io::Read for Consumer<u8> {
+impl<U:Reactor> std::io::Read for Consumer<u8,U> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         use ChunkError::TooFewSlots;
