@@ -65,7 +65,7 @@ mod reactor;
 #[cfg(feature = "async")]
 mod async_rtrb;
 #[cfg(feature = "async")]
-pub use async_rtrb::{AsyncPushError,AsyncPopError,AsyncPeekError};
+pub use async_rtrb::{AsyncRingBuffer,AsyncProducer,AsyncConsumer,AsyncWriteChunk,AsyncWriteChunkUninit,AsyncReadChunk,AsyncPushError,AsyncPopError,AsyncPeekError};
 
 use reactor::{DummyReactor, Reactor};
 // This is used in the documentation.
@@ -130,24 +130,6 @@ impl<T> RingBuffer<T>{
 }
 impl<T,U:Reactor> RingBuffer<T,U> {
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (producer, consumer) = RingBuffer::<f32>::new(100);
-    /// ```
-    ///
-    /// Specifying an explicit type with the [turbofish](https://turbo.fish/)
-    /// is is only necessary if it cannot be deduced by the compiler.
-    ///
-    /// ```
-    /// use rtrb::RingBuffer;
-    ///
-    /// let (mut producer, consumer) = RingBuffer::new(100);
-    /// assert_eq!(producer.push(0.0f32), Ok(()));
-    /// ```
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     fn with_reactor(capacity: usize) -> (Producer<T,U>, Consumer<T,U>) {

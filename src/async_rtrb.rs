@@ -4,6 +4,19 @@ use parking_lot::Mutex;
 
 use crate::{Consumer, Reactor, Producer, RingBuffer, chunks::{ReadChunk, WriteChunk, WriteChunkUninit}};
 
+/// [`RingBuffer`] which supports async read write.
+pub type AsyncRingBuffer<T> = RingBuffer<T,AsyncReactor>;
+/// [`Producer`] which supports async write.
+pub type AsyncProducer<T> = Producer<T,AsyncReactor>;
+/// [`Consumer`] which supports async read.
+pub type AsyncConsumer<T> = Consumer<T,AsyncReactor>;
+/// [`WriteChunk`] from [`AsyncProducer`].
+pub type AsyncWriteChunk<'a,T> = WriteChunk<'a,T,AsyncReactor>;
+/// [`WriteChunkUninit`] from [`AsyncProducer`].
+pub type AsyncWriteChunkUninit<'a,T> = WriteChunkUninit<'a,T,AsyncReactor>;
+/// [`ReadChunk`] from [`AsyncConsumer`].
+pub type AsyncReadChunk<'a,T> = ReadChunk<'a,T,AsyncReactor>;
+
 impl<T> RingBuffer<T>{
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
@@ -26,7 +39,7 @@ impl<T> RingBuffer<T>{
     /// ```
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    pub fn new_async(capacity: usize) -> (Producer<T,AsyncReactor>, Consumer<T,AsyncReactor>) {
+    pub fn new_async(capacity: usize) -> (AsyncProducer<T>, AsyncConsumer<T>) {
         RingBuffer::<T,AsyncReactor>::with_reactor(capacity)
     }
 }
@@ -211,7 +224,7 @@ impl<T> Producer<T,AsyncReactor>{
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub async fn write_chunk_async(&mut self, n: usize) -> Result<WriteChunk<'_, T,AsyncReactor>, AsyncChunkError>
+    pub async fn write_chunk_async(&mut self, n: usize) -> Result<AsyncWriteChunk<'_, T>, AsyncChunkError>
     where
         T: Default,
     {
@@ -244,7 +257,7 @@ impl<T> Producer<T,AsyncReactor>{
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    pub fn write_chunk_uninit_async(&mut self,n:usize) -> impl Future<Output = Result<WriteChunkUninit<'_,T,AsyncReactor>,AsyncChunkError>>{ 
+    pub fn write_chunk_uninit_async(&mut self,n:usize) -> impl Future<Output = Result<AsyncWriteChunkUninit<'_,T>,AsyncChunkError>>{ 
         WriteChunkUninitAsync{
             producer:Some(self),
             n:n,
@@ -406,7 +419,7 @@ impl<T> Consumer<T,AsyncReactor>{
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn read_chunk_async(&mut self, n: usize) -> impl Future<Output = Result<ReadChunk<'_, T,AsyncReactor>, AsyncChunkError>> {
+    pub fn read_chunk_async(&mut self, n: usize) -> impl Future<Output = Result<AsyncReadChunk<'_, T>, AsyncChunkError>> {
        ReadChunkAsync{
            consumer:Some(self),
            n:n,
