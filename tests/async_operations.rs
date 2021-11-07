@@ -1,6 +1,6 @@
 #![cfg(feature = "async")]
 use rtrb::RingBuffer;
-use rtrb::*;
+use rtrb::chunks::AsyncChunkError;
 
 #[tokio::test]
 async fn exceed_capacity(){

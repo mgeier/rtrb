@@ -174,6 +174,9 @@ use core::sync::atomic::Ordering;
 
 use crate::{Consumer, CopyToUninit, DummyReactor, Reactor, Producer};
 
+#[cfg(feature = "async")]
+pub use crate::async_rtrb::AsyncChunkError;
+
 // This is used in the documentation.
 #[allow(unused_imports)]
 use crate::RingBuffer;
