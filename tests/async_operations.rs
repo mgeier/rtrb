@@ -55,3 +55,160 @@ async fn deadlock(){
         p.push(2).unwrap();
     });
 }
+#[tokio::test]
+async fn pipeline_push_pop(){
+    let range1 = 0..1000;
+    let range2 = range1.clone();
+    let range3 = range2.clone();
+    let (mut p1,mut c1) = RingBuffer::new_async(1);
+    let (mut p2,mut c2) = RingBuffer::new_async(1);
+    tokio::join!(async move{
+        for x1 in range1 {
+            p1.push_async(x1).await.unwrap();
+        }
+    },async move{
+
+        for x2 in range2{
+            assert_eq!(c1.pop_async().await,Ok(x2));
+            p2.push_async(x2).await.unwrap();
+        }
+        assert_eq!(c1.pop_async().await,Err(rtrb::AsyncPopError::EmptyAndAbandoned));
+        
+    },async move{
+        for x3 in range3{
+            assert_eq!(c2.pop_async().await,Ok(x3));
+        }
+        assert_eq!(c2.pop_async().await,Err(rtrb::AsyncPopError::EmptyAndAbandoned));
+    });
+}
+
+#[tokio::test]
+async fn pipeline_push_pop_threaded(){
+    let range1 = 0..1000;
+    let range2 = range1.clone();
+    let range3 = range2.clone();
+    let (mut p1,mut c1) = RingBuffer::new_async(1);
+    let (mut p2,mut c2) = RingBuffer::new_async(1);
+    let results = tokio::join!(tokio::spawn(async move{
+        for x1 in range1 {
+            p1.push_async(x1).await.unwrap();
+        }
+    }),tokio::spawn(async move{
+
+        for x2 in range2{
+            assert_eq!(c1.pop_async().await,Ok(x2));
+            p2.push_async(x2).await.unwrap();
+        }
+        assert_eq!(c1.pop_async().await,Err(rtrb::AsyncPopError::EmptyAndAbandoned));
+        
+    }),tokio::spawn(async move{
+        for x3 in range3{
+            assert_eq!(c2.pop_async().await,Ok(x3));
+        }
+        assert_eq!(c2.pop_async().await,Err(rtrb::AsyncPopError::EmptyAndAbandoned));
+    }));
+    results.0.unwrap();
+    results.1.unwrap();
+    results.2.unwrap();
+}
+
+#[tokio::test]
+async fn pipeline_chunks(){
+    let capacity= 100;
+    
+    let elements = 1000;
+    let (mut p1,mut c1) = RingBuffer::new_async(capacity);
+    let (mut p2,mut c2) = RingBuffer::new_async(capacity);
+    tokio::join!(async move{
+        let mut x = 0;
+        let chunk_size = 50;
+        loop{
+            let chunk = p1.write_chunk_uninit_async(chunk_size).await.unwrap();
+
+            assert_eq!(chunk.fill_from_iter(x..x+chunk_size),chunk_size);
+            x += chunk_size;
+            match x.cmp(&elements){
+                std::cmp::Ordering::Less => continue,
+                std::cmp::Ordering::Equal => break,
+                std::cmp::Ordering::Greater => unreachable!(),
+            }
+        }
+        
+    },async move{
+        let chunk_size = 100;
+        loop{
+            if let Ok(read_chunk) = c1.read_chunk_async(chunk_size).await{
+                let write_chunk = p2.write_chunk_uninit_async(chunk_size).await.unwrap();
+                write_chunk.fill_from_iter(read_chunk);
+            }else {
+                break;
+            }
+        }
+        
+    },async move{
+        let chunk_size = 25;
+        let mut vec = Vec::new();
+        loop{
+            if let Ok(read_chunk) = c2.read_chunk_async(chunk_size).await{
+                vec.extend(read_chunk);
+            }else {
+                break;
+            }
+        }
+        for (i,x) in vec.into_iter().enumerate(){
+            assert_eq!(x,i);
+        }
+    });
+}
+
+#[tokio::test]
+async fn pipeline_chunks_threaded(){
+    let capacity= 100;
+    
+    let elements = 1000;
+    let (mut p1,mut c1) = RingBuffer::new_async(capacity);
+    let (mut p2,mut c2) = RingBuffer::new_async(capacity);
+    let results = tokio::join!(tokio::spawn(async move{
+        let mut x = 0;
+        let chunk_size = 50;
+        loop{
+            let chunk = p1.write_chunk_uninit_async(chunk_size).await.unwrap();
+
+            assert_eq!(chunk.fill_from_iter(x..x+chunk_size),chunk_size);
+            x += chunk_size;
+            match x.cmp(&elements){
+                std::cmp::Ordering::Less => continue,
+                std::cmp::Ordering::Equal => break,
+                std::cmp::Ordering::Greater => unreachable!(),
+            }
+        }
+        
+    }),tokio::spawn(async move{
+        let chunk_size = 100;
+        loop{
+            if let Ok(read_chunk) = c1.read_chunk_async(chunk_size).await{
+                let write_chunk = p2.write_chunk_uninit_async(chunk_size).await.unwrap();
+                write_chunk.fill_from_iter(read_chunk);
+            }else {
+                break;
+            }
+        }
+        
+    }),tokio::spawn(async move{
+        let chunk_size = 25;
+        let mut vec = Vec::new();
+        loop{
+            if let Ok(read_chunk) = c2.read_chunk_async(chunk_size).await{
+                vec.extend(read_chunk);
+            }else {
+                break;
+            }
+        }
+        for (i,x) in vec.into_iter().enumerate(){
+            assert_eq!(x,i);
+        }
+    }));
+    results.0.unwrap();
+    results.1.unwrap();
+    results.2.unwrap();
+}
