@@ -23,9 +23,18 @@ pub trait Reactor:Default{
 pub struct DummyReactor;
 
 impl Reactor for DummyReactor{
+    #[inline]
     fn pushed(&self,_n:usize) {}
 
+    #[inline]
+    fn pushed1(&self){}
+
+    #[inline]
     fn popped(&self,_n:usize) {}
 
+    #[inline]
+    fn popped1(&self){}
+
+    #[inline]
     fn abandoned(&self) {}
 }
