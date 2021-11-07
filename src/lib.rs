@@ -65,7 +65,7 @@ mod reactor;
 #[cfg(feature = "async")]
 mod async_rtrb;
 #[cfg(feature = "async")]
-pub use async_rtrb::AsyncChunkError;
+pub use async_rtrb::{AsyncChunkError,AsyncPushError,AsyncPopError,AsyncPeekError};
 
 use reactor::{DummyReactor, Reactor};
 // This is used in the documentation.
