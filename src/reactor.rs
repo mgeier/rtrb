@@ -1,5 +1,5 @@
 #[cfg(feature = "async")]
-pub use crate::async_rtrb::ReadWriteReactor;
+pub use crate::async_rtrb::AsyncReactor;
 /// Actually used when async read write operations.
 pub trait Reactor:Default{
     /// Should call when new read slots are available. Should be called from producer thread.

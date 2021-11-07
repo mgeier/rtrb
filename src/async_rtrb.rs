@@ -26,14 +26,14 @@ impl<T> RingBuffer<T>{
     /// ```
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
-    pub fn new_async(capacity: usize) -> (Producer<T,ReadWriteReactor>, Consumer<T,ReadWriteReactor>) {
-        RingBuffer::<T,ReadWriteReactor>::with_reactor(capacity)
+    pub fn new_async(capacity: usize) -> (Producer<T,AsyncReactor>, Consumer<T,AsyncReactor>) {
+        RingBuffer::<T,AsyncReactor>::with_reactor(capacity)
     }
 }
 
 /// Trigger futures to wake when new slots are available,or abandoned.
 #[derive(Debug,Default)]
-pub struct ReadWriteReactor{
+pub struct AsyncReactor{
     state:Mutex<ReactorState>
 }
 
@@ -50,7 +50,7 @@ impl Default for ReactorState{
     }
 }
 
-impl ReadWriteReactor{
+impl AsyncReactor{
     fn pushed_or_popped(&self,n:usize){
         let mut guard = self.state.lock();
         let state = guard.deref_mut();
@@ -69,7 +69,7 @@ impl ReadWriteReactor{
     }
 }
 
-impl Reactor for ReadWriteReactor{
+impl Reactor for AsyncReactor{
     fn pushed(&self,n:usize) {
         self.pushed_or_popped(n);
     }
@@ -145,7 +145,7 @@ impl<T> fmt::Debug for AsyncPushError<T>{
 }
 #[cfg(feature = "std")]
 impl<T> std::error::Error for AsyncPushError<T>{}
-impl<T> Producer<T,ReadWriteReactor>{
+impl<T> Producer<T,AsyncReactor>{
     /// Attempts to asynchronously wait for at least 1 slots available, push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -211,7 +211,7 @@ impl<T> Producer<T,ReadWriteReactor>{
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub async fn write_chunk_async(&mut self, n: usize) -> Result<WriteChunk<'_, T,ReadWriteReactor>, AsyncChunkError>
+    pub async fn write_chunk_async(&mut self, n: usize) -> Result<WriteChunk<'_, T,AsyncReactor>, AsyncChunkError>
     where
         T: Default,
     {
@@ -244,7 +244,7 @@ impl<T> Producer<T,ReadWriteReactor>{
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    pub fn write_chunk_uninit_async(&mut self,n:usize) -> impl Future<Output = Result<WriteChunkUninit<'_,T,ReadWriteReactor>,AsyncChunkError>>{ 
+    pub fn write_chunk_uninit_async(&mut self,n:usize) -> impl Future<Output = Result<WriteChunkUninit<'_,T,AsyncReactor>,AsyncChunkError>>{ 
         WriteChunkUninitAsync{
             producer:Some(self),
             n:n,
@@ -295,7 +295,7 @@ impl fmt::Display for AsyncPeekError{
 #[cfg(feature = "std")]
 impl std::error::Error for AsyncPeekError{}
 
-impl<T> Consumer<T,ReadWriteReactor>{
+impl<T> Consumer<T,AsyncReactor>{
     /// Attempts to asynchronously wait for at least 1 slots available, pop an element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -406,7 +406,7 @@ impl<T> Consumer<T,ReadWriteReactor>{
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn read_chunk_async(&mut self, n: usize) -> impl Future<Output = Result<ReadChunk<'_, T,ReadWriteReactor>, AsyncChunkError>> {
+    pub fn read_chunk_async(&mut self, n: usize) -> impl Future<Output = Result<ReadChunk<'_, T,AsyncReactor>, AsyncChunkError>> {
        ReadChunkAsync{
            consumer:Some(self),
            n:n,
@@ -427,13 +427,13 @@ impl<T,U:Reactor> Drop for Consumer<T,U>{
 }
 
 struct WriteChunkUninitAsync<'a,T>{
-    producer:Option<&'a mut Producer<T,ReadWriteReactor>>,
+    producer:Option<&'a mut Producer<T,AsyncReactor>>,
     n:usize,
     waker:Option<Waker>,
 }
 impl<T> Unpin for WriteChunkUninitAsync<'_,T>{}
 impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
-    type Output = Result<WriteChunkUninit<'a,T,ReadWriteReactor>,AsyncChunkError>;
+    type Output = Result<WriteChunkUninit<'a,T,AsyncReactor>,AsyncChunkError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -524,13 +524,13 @@ impl<T> Drop  for WriteChunkUninitAsync<'_,T>{
 }
 
 struct ReadChunkAsync<'a,T>{
-    consumer:Option<&'a mut Consumer<T,ReadWriteReactor>>,
+    consumer:Option<&'a mut Consumer<T,AsyncReactor>>,
     n:usize,
     waker:Option<Waker>,
 }
 impl<T> Unpin for ReadChunkAsync<'_,T>{}
 impl<'a,T> Future for ReadChunkAsync<'a,T>{
-    type Output = Result<ReadChunk<'a,T,ReadWriteReactor>,AsyncChunkError>;
+    type Output = Result<ReadChunk<'a,T,AsyncReactor>,AsyncChunkError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
