@@ -562,6 +562,8 @@ impl<T,U:Reactor> WriteChunkUninit<'_, T,U> {
     }
 }
 
+unsafe impl<T,U:Reactor> Send for WriteChunkUninit<'_,T,U>{}
+
 /// Structure for reading from multiple slots in one go.
 ///
 /// This is returned from [`Consumer::read_chunk()`].
@@ -689,6 +691,8 @@ impl<T,U:Reactor> ReadChunk<'_, T,U> {
         self.first_len == 0
     }
 }
+
+unsafe impl<T,U:Reactor> Send for ReadChunk<'_,T,U>{}
 
 impl<'a, T,U:Reactor> IntoIterator for ReadChunk<'a, T,U> {
     type Item = T;
