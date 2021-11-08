@@ -5,17 +5,17 @@ use parking_lot::Mutex;
 use crate::{Consumer, Reactor, Producer, RingBuffer, chunks::{ReadChunk, WriteChunk, WriteChunkUninit}};
 
 /// [`RingBuffer`] which supports async read write.
-pub type AsyncRingBuffer<T> = RingBuffer<T,AsyncReactor>;
+pub type AsyncRingBuffer<T> = RingBuffer<T,MutexReactor>;
 /// [`Producer`] which supports async write.
-pub type AsyncProducer<T> = Producer<T,AsyncReactor>;
+pub type AsyncProducer<T> = Producer<T,MutexReactor>;
 /// [`Consumer`] which supports async read.
-pub type AsyncConsumer<T> = Consumer<T,AsyncReactor>;
+pub type AsyncConsumer<T> = Consumer<T,MutexReactor>;
 /// [`WriteChunk`] from [`AsyncProducer`].
-pub type AsyncWriteChunk<'a,T> = WriteChunk<'a,T,AsyncReactor>;
+pub type AsyncWriteChunk<'a,T> = WriteChunk<'a,T,MutexReactor>;
 /// [`WriteChunkUninit`] from [`AsyncProducer`].
-pub type AsyncWriteChunkUninit<'a,T> = WriteChunkUninit<'a,T,AsyncReactor>;
+pub type AsyncWriteChunkUninit<'a,T> = WriteChunkUninit<'a,T,MutexReactor>;
 /// [`ReadChunk`] from [`AsyncConsumer`].
-pub type AsyncReadChunk<'a,T> = ReadChunk<'a,T,AsyncReactor>;
+pub type AsyncReadChunk<'a,T> = ReadChunk<'a,T,MutexReactor>;
 
 impl<T> RingBuffer<T>{
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
@@ -40,38 +40,38 @@ impl<T> RingBuffer<T>{
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new_async(capacity: usize) -> (AsyncProducer<T>, AsyncConsumer<T>) {
-        RingBuffer::<T,AsyncReactor>::with_reactor(capacity)
+        RingBuffer::<T,MutexReactor>::with_reactor(capacity)
     }
 }
 
 /// Trigger futures to wake when new slots are available,or abandoned.
 #[derive(Debug,Default)]
-pub struct AsyncReactor{
-    state:Mutex<ReactorState>
+pub struct MutexReactor{
+    state:Mutex<MutexReactorState>
 }
 
 #[derive(Debug)]
-pub enum ReactorState{
+pub enum MutexReactorState{
     Registered(Waker,usize),
     Abandoned,
     Unregistered,
 }
 
-impl Default for ReactorState{
+impl Default for MutexReactorState{
     fn default() -> Self {
-        ReactorState::Unregistered
+        MutexReactorState::Unregistered
     }
 }
 
-impl AsyncReactor{
+impl MutexReactor{
     fn pushed_or_popped(&self,n:usize){
         let mut guard = self.state.lock();
         let state = guard.deref_mut();
-        if let ReactorState::Registered(_,insufficient_slots) = state{
+        if let MutexReactorState::Registered(_,insufficient_slots) = state{
             if *insufficient_slots > n{
                 *insufficient_slots -= n;
             }else{
-                if let ReactorState::Registered(waker,_) = std::mem::take(state){
+                if let MutexReactorState::Registered(waker,_) = std::mem::take(state){
                     drop(guard);
                     waker.wake();
                 }else{
@@ -82,7 +82,7 @@ impl AsyncReactor{
     }
 }
 
-impl Reactor for AsyncReactor{
+impl Reactor for MutexReactor{
     fn pushed(&self,n:usize) {
         self.pushed_or_popped(n);
     }
@@ -93,7 +93,7 @@ impl Reactor for AsyncReactor{
 
     fn abandoned(&self) {
         let mut guard = self.state.lock();
-        if let ReactorState::Registered(waker,_) = std::mem::replace(&mut *guard,ReactorState::Abandoned){
+        if let MutexReactorState::Registered(waker,_) = std::mem::replace(&mut *guard,MutexReactorState::Abandoned){
             drop(guard);
             waker.wake();
         }
@@ -158,7 +158,7 @@ impl<T> fmt::Debug for AsyncPushError<T>{
 }
 #[cfg(feature = "std")]
 impl<T> std::error::Error for AsyncPushError<T>{}
-impl<T> Producer<T,AsyncReactor>{
+impl<T> Producer<T,MutexReactor>{
     /// Attempts to asynchronously wait for at least 1 slots available, push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -308,7 +308,7 @@ impl fmt::Display for AsyncPeekError{
 #[cfg(feature = "std")]
 impl std::error::Error for AsyncPeekError{}
 
-impl<T> Consumer<T,AsyncReactor>{
+impl<T> Consumer<T,MutexReactor>{
     /// Attempts to asynchronously wait for at least 1 slots available, pop an element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -440,13 +440,13 @@ impl<T,U:Reactor> Drop for Consumer<T,U>{
 }
 
 struct WriteChunkUninitAsync<'a,T>{
-    producer:Option<&'a mut Producer<T,AsyncReactor>>,
+    producer:Option<&'a mut Producer<T,MutexReactor>>,
     n:usize,
     waker:Option<Waker>,
 }
 impl<T> Unpin for WriteChunkUninitAsync<'_,T>{}
 impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
-    type Output = Result<WriteChunkUninit<'a,T,AsyncReactor>,AsyncChunkError>;
+    type Output = Result<WriteChunkUninit<'a,T,MutexReactor>,AsyncChunkError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -482,14 +482,14 @@ impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
                         if slots < n{
                             let state = guard.deref_mut();
                             return match *state{
-                                ReactorState::Registered(_, insufficient_slots) => {
+                                MutexReactorState::Registered(_, insufficient_slots) => {
                                     Ready(Err(AsyncChunkError::WillDeadlock(insufficient_slots,slots)))
                                 },
-                                ReactorState::Abandoned => {
+                                MutexReactorState::Abandoned => {
                                     Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(slots)))
                                 },
-                                ReactorState::Unregistered => {
-                                    *state = ReactorState::Registered(cx.waker().clone(),n- slots);
+                                MutexReactorState::Unregistered => {
+                                    *state = MutexReactorState::Registered(cx.waker().clone(),n- slots);
                                     *waker = Some(cx.waker().clone());
                                     Poll::Pending
                                 },
@@ -527,9 +527,9 @@ impl<T> Drop  for WriteChunkUninitAsync<'_,T>{
         if let Some(waker) = std::mem::take(&mut self.waker){
             let mut guard = self.producer.as_ref().unwrap().buffer.reactor.state.lock();
             let state = guard.deref_mut();
-            if let ReactorState::Registered(current_waker,_) = state{
+            if let MutexReactorState::Registered(current_waker,_) = state{
                 if waker.will_wake(current_waker){
-                    *state = ReactorState::Unregistered;
+                    *state = MutexReactorState::Unregistered;
                 }
             }
         }
@@ -537,13 +537,13 @@ impl<T> Drop  for WriteChunkUninitAsync<'_,T>{
 }
 
 struct ReadChunkAsync<'a,T>{
-    consumer:Option<&'a mut Consumer<T,AsyncReactor>>,
+    consumer:Option<&'a mut Consumer<T,MutexReactor>>,
     n:usize,
     waker:Option<Waker>,
 }
 impl<T> Unpin for ReadChunkAsync<'_,T>{}
 impl<'a,T> Future for ReadChunkAsync<'a,T>{
-    type Output = Result<ReadChunk<'a,T,AsyncReactor>,AsyncChunkError>;
+    type Output = Result<ReadChunk<'a,T,MutexReactor>,AsyncChunkError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -578,14 +578,14 @@ impl<'a,T> Future for ReadChunkAsync<'a,T>{
                         if slots < n{
                             let state = guard.deref_mut();
                             return match *state{
-                                ReactorState::Registered(_, insufficient_slots) => {
+                                MutexReactorState::Registered(_, insufficient_slots) => {
                                     Ready(Err(AsyncChunkError::WillDeadlock(insufficient_slots,slots)))
                                 },
-                                ReactorState::Abandoned => {
+                                MutexReactorState::Abandoned => {
                                     Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(slots)))
                                 },
-                                ReactorState::Unregistered => {
-                                    *state = ReactorState::Registered(cx.waker().clone(),n- slots);
+                                MutexReactorState::Unregistered => {
+                                    *state = MutexReactorState::Registered(cx.waker().clone(),n- slots);
                                     *waker = Some(cx.waker().clone());
                                     Poll::Pending
                                 },
@@ -623,9 +623,9 @@ impl<T> Drop  for ReadChunkAsync<'_,T>{
         if let Some(waker) = std::mem::take(&mut self.waker){
             let mut guard = self.consumer.as_ref().unwrap().buffer.reactor.state.lock();
             let state = guard.deref_mut();
-            if let ReactorState::Registered(current_waker,_) = state{
+            if let MutexReactorState::Registered(current_waker,_) = state{
                 if waker.will_wake(current_waker){
-                    *state = ReactorState::Unregistered;
+                    *state = MutexReactorState::Unregistered;
                 }
             }
         }
