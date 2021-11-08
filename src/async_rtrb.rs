@@ -44,6 +44,23 @@ impl<T> RingBuffer<T>{
     }
 }
 
+pub trait AsyncReactor:Reactor{
+    #[must_use]
+    fn register_read_slots_available<T>(consumer:&&mut Consumer<T,Self>,waker:&Waker,n:usize)->AsyncReactorRegisterResult;
+    #[must_use]
+    fn register_write_slots_available<T>(producer:&&mut Producer<T,Self>,waker:&Waker,n:usize)->AsyncReactorRegisterResult;
+
+    fn unregister_read_slots_available(&self);
+    fn unregister_write_slots_available(&self);
+}
+#[derive(Debug)]
+pub enum AsyncReactorRegisterResult{
+    Registered,
+    AlreadyAvailable,
+    TooFewSlotsAndAbandoned(usize),
+    WillDeadlock(usize,usize),
+}
+
 /// Trigger futures to wake when new slots are available,or abandoned.
 #[derive(Debug,Default)]
 pub struct MutexReactor{
@@ -52,7 +69,8 @@ pub struct MutexReactor{
 
 #[derive(Debug)]
 pub enum MutexReactorState{
-    Registered(Waker,usize),
+    ProducerRegistered(Waker,usize),
+    ConsumerRegistered(Waker,usize),
     Abandoned,
     Unregistered,
 }
@@ -63,42 +81,136 @@ impl Default for MutexReactorState{
     }
 }
 
-impl MutexReactor{
-    fn pushed_or_popped(&self,n:usize){
-        let mut guard = self.state.lock();
-        let state = guard.deref_mut();
-        if let MutexReactorState::Registered(_,insufficient_slots) = state{
-            if *insufficient_slots > n{
-                *insufficient_slots -= n;
-            }else{
-                if let MutexReactorState::Registered(waker,_) = std::mem::take(state){
-                    drop(guard);
-                    waker.wake();
-                }else{
-                    panic!();
-                }
-            }
-        }
-    }
-}
 
 impl Reactor for MutexReactor{
     fn pushed(&self,n:usize) {
-        self.pushed_or_popped(n);
+        let mut guard = self.state.lock();
+        let state = guard.deref_mut();
+        match state {
+            MutexReactorState::ConsumerRegistered(_,insufficient_slots) => {
+                if *insufficient_slots > n{
+                    *insufficient_slots -= n;
+                }else{
+                    if let MutexReactorState::ConsumerRegistered(waker,_) = std::mem::take(state){
+                        drop(guard);
+                        waker.wake();
+                    }else{
+                        unreachable!();
+                    }
+                }
+            },
+            MutexReactorState::ProducerRegistered(_,_) => unreachable!(),
+            _ => (),
+        }
     }
 
     fn popped(&self,n:usize) {
-        self.pushed_or_popped(n);
+        let mut guard = self.state.lock();
+        let state = guard.deref_mut();
+        match state {
+            MutexReactorState::ProducerRegistered(_,insufficient_slots) => {
+                if *insufficient_slots > n{
+                    *insufficient_slots -= n;
+                }else{
+                    if let MutexReactorState::ProducerRegistered(waker,_) = std::mem::take(state){
+                        drop(guard);
+                        waker.wake();
+                    }else{
+                        unreachable!();
+                    }
+                }
+            },
+            MutexReactorState::ConsumerRegistered(_,_) => unreachable!(),
+            _ => (),
+        }
     }
 
     fn abandoned(&self) {
         let mut guard = self.state.lock();
-        if let MutexReactorState::Registered(waker,_) = std::mem::replace(&mut *guard,MutexReactorState::Abandoned){
+        if let MutexReactorState::ProducerRegistered(waker,_) | MutexReactorState::ConsumerRegistered(waker,_) = std::mem::replace(&mut *guard,MutexReactorState::Abandoned){
             drop(guard);
             waker.wake();
         }
     }
 }
+
+impl AsyncReactor for MutexReactor{
+    fn register_read_slots_available<T>(consumer:&&mut Consumer<T,Self>,waker:&Waker,n:usize)->AsyncReactorRegisterResult {
+        let buffer = consumer.buffer.as_ref();
+        let mut guard = buffer.reactor.state.lock();
+        // Refresh the tail ...
+        let tail = buffer.tail.load(Ordering::Relaxed);
+        consumer.tail.set(tail);
+
+        // ... and check if there *really* are not enough slots.
+        let slots = buffer.distance(consumer.head.get(), tail);
+        if slots < n{
+            let state = guard.deref_mut();
+            return match *state{
+                MutexReactorState::ProducerRegistered(_, insufficient_slots) => {
+                    AsyncReactorRegisterResult::WillDeadlock(insufficient_slots,slots)
+                },
+                MutexReactorState::Abandoned => {
+                    AsyncReactorRegisterResult::TooFewSlotsAndAbandoned(slots)
+                },
+                MutexReactorState::Unregistered => {
+                    *state = MutexReactorState::ConsumerRegistered(waker.clone(),n- slots);
+                    AsyncReactorRegisterResult::Registered
+                },
+                MutexReactorState::ConsumerRegistered(_, _) => unreachable!(),
+            }
+        }else{
+            AsyncReactorRegisterResult::AlreadyAvailable
+        }
+    }
+
+    fn register_write_slots_available<T>(producer:&&mut Producer<T,Self>,waker:&Waker,n:usize)->AsyncReactorRegisterResult {
+        let buffer = producer.buffer.as_ref();
+        let capacity = buffer.capacity;
+        let mut guard = buffer.reactor.state.lock();
+        // Refresh the head ...
+        let head = buffer.head.load(Ordering::Relaxed);
+        producer.head.set(head);
+
+        // ... and check if there *really* are not enough slots.
+        let slots = capacity - buffer.distance(head, producer.tail.get());
+        if slots < n{
+            let state = guard.deref_mut();
+            return match *state{
+                MutexReactorState::ConsumerRegistered(_, insufficient_slots) => {
+                    AsyncReactorRegisterResult::WillDeadlock(insufficient_slots,slots)
+                },
+                MutexReactorState::Abandoned => {
+                    AsyncReactorRegisterResult::TooFewSlotsAndAbandoned(slots)
+                },
+                MutexReactorState::Unregistered => {
+                    *state = MutexReactorState::ProducerRegistered(waker.clone(),n- slots);
+                    AsyncReactorRegisterResult::Registered
+                },
+                MutexReactorState::ProducerRegistered(_, _) => unreachable!(),
+            }
+        }else{
+            AsyncReactorRegisterResult::AlreadyAvailable
+        }
+    }
+
+    fn unregister_read_slots_available(&self) {
+        let mut guard = self.state.lock();
+        let state = guard.deref_mut();
+        if matches!(state,MutexReactorState::ConsumerRegistered(_,_)){
+            *state = MutexReactorState::Unregistered;
+        }
+    }
+
+    fn unregister_write_slots_available(&self) {
+        let mut guard = self.state.lock();
+        let state = guard.deref_mut();
+        if matches!(state,MutexReactorState::ProducerRegistered(_,_)){
+            *state = MutexReactorState::Unregistered;
+        }
+    }
+}
+
 /// Error type for [`Consumer::read_chunk_async()`], [`Producer::write_chunk_async()`]
 /// and [`Producer::write_chunk_uninit_async()`].
 #[derive(Debug)]
@@ -158,7 +270,7 @@ impl<T> fmt::Debug for AsyncPushError<T>{
 }
 #[cfg(feature = "std")]
 impl<T> std::error::Error for AsyncPushError<T>{}
-impl<T> Producer<T,MutexReactor>{
+impl<T,U:AsyncReactor> Producer<T,U>{
     /// Attempts to asynchronously wait for at least 1 slots available, push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -224,7 +336,7 @@ impl<T> Producer<T,MutexReactor>{
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub async fn write_chunk_async(&mut self, n: usize) -> Result<AsyncWriteChunk<'_, T>, AsyncChunkError>
+    pub async fn write_chunk_async(&mut self, n: usize) -> Result<WriteChunk<'_, T,U>, AsyncChunkError>
     where
         T: Default,
     {
@@ -257,11 +369,11 @@ impl<T> Producer<T,MutexReactor>{
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    pub fn write_chunk_uninit_async(&mut self,n:usize) -> impl Future<Output = Result<AsyncWriteChunkUninit<'_,T>,AsyncChunkError>>{ 
+    pub fn write_chunk_uninit_async(&mut self,n:usize) -> impl Future<Output = Result<WriteChunkUninit<'_,T,U>,AsyncChunkError>>{ 
         WriteChunkUninitAsync{
             producer:Some(self),
             n:n,
-            waker:None,
+            registered:false,
         }
     }
 }
@@ -308,7 +420,7 @@ impl fmt::Display for AsyncPeekError{
 #[cfg(feature = "std")]
 impl std::error::Error for AsyncPeekError{}
 
-impl<T> Consumer<T,MutexReactor>{
+impl<T,U:AsyncReactor> Consumer<T,U>{
     /// Attempts to asynchronously wait for at least 1 slots available, pop an element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -419,11 +531,11 @@ impl<T> Consumer<T,MutexReactor>{
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn read_chunk_async(&mut self, n: usize) -> impl Future<Output = Result<AsyncReadChunk<'_, T>, AsyncChunkError>> {
+    pub fn read_chunk_async(&mut self, n: usize) -> impl Future<Output = Result<ReadChunk<'_, T,U>, AsyncChunkError>> {
        ReadChunkAsync{
            consumer:Some(self),
            n:n,
-           waker:None,
+           registered:false,
        }
     }
 }
@@ -439,14 +551,14 @@ impl<T,U:Reactor> Drop for Consumer<T,U>{
     }
 }
 
-struct WriteChunkUninitAsync<'a,T>{
-    producer:Option<&'a mut Producer<T,MutexReactor>>,
+struct WriteChunkUninitAsync<'a,T,U:AsyncReactor>{
+    producer:Option<&'a mut Producer<T,U>>,
     n:usize,
-    waker:Option<Waker>,
+    registered:bool,
 }
-impl<T> Unpin for WriteChunkUninitAsync<'_,T>{}
-impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
-    type Output = Result<WriteChunkUninit<'a,T,MutexReactor>,AsyncChunkError>;
+impl<T,U:AsyncReactor> Unpin for WriteChunkUninitAsync<'_,T,U>{}
+impl<'a,T,U:AsyncReactor> Future for WriteChunkUninitAsync<'a,T,U>{
+    type Output = Result<WriteChunkUninit<'a,T,U>,AsyncChunkError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -455,8 +567,7 @@ impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
         let buffer = &producer.buffer;
         let capacity = buffer.capacity;
         let tail = producer.tail.get();
-        let waker = &mut this.waker;
-        if waker.is_none(){
+        if !this.registered{
             
 
             // Check if the queue has *possibly* not enough slots.
@@ -472,35 +583,18 @@ impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
                     if capacity < n{
                         return Ready(Err(AsyncChunkError::ExceedCapacity(capacity)));
                     }else{
-                        let mut guard = buffer.reactor.state.lock();
-                        // Refresh the head ...
-                        let head = buffer.head.load(Ordering::Relaxed);
-                        producer.head.set(head);
-
-                        // ... and check if there *really* are not enough slots.
-                        let slots = capacity - buffer.distance(head, tail);
-                        if slots < n{
-                            let state = guard.deref_mut();
-                            return match *state{
-                                MutexReactorState::Registered(_, insufficient_slots) => {
-                                    Ready(Err(AsyncChunkError::WillDeadlock(insufficient_slots,slots)))
-                                },
-                                MutexReactorState::Abandoned => {
-                                    Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(slots)))
-                                },
-                                MutexReactorState::Unregistered => {
-                                    *state = MutexReactorState::Registered(cx.waker().clone(),n- slots);
-                                    *waker = Some(cx.waker().clone());
-                                    Poll::Pending
-                                },
-                            }
+                        match U::register_write_slots_available(producer, cx.waker(), n){
+                            AsyncReactorRegisterResult::Registered => return Poll::Pending,
+                            AsyncReactorRegisterResult::AlreadyAvailable => (),
+                            AsyncReactorRegisterResult::TooFewSlotsAndAbandoned(available_slots) => return Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(available_slots))),
+                            AsyncReactorRegisterResult::WillDeadlock(required, available_slots) => return Ready(Err(AsyncChunkError::WillDeadlock(required,available_slots))),
                         }
                     }
                 }
             }
             
         }else{
-            this.waker = None;
+            this.registered = false;
             // Refresh the head ...
             let head = buffer.head.load(Ordering::Acquire);
             producer.head.set(head);
@@ -522,28 +616,22 @@ impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
         }))
     }
 }
-impl<T> Drop  for WriteChunkUninitAsync<'_,T>{
+impl<T,U:AsyncReactor> Drop  for WriteChunkUninitAsync<'_,T,U>{
     fn drop(&mut self) {
-        if let Some(waker) = std::mem::take(&mut self.waker){
-            let mut guard = self.producer.as_ref().unwrap().buffer.reactor.state.lock();
-            let state = guard.deref_mut();
-            if let MutexReactorState::Registered(current_waker,_) = state{
-                if waker.will_wake(current_waker){
-                    *state = MutexReactorState::Unregistered;
-                }
-            }
+        if self.registered{
+            self.producer.as_ref().unwrap().buffer.reactor.unregister_write_slots_available();
         }
     }
 }
 
-struct ReadChunkAsync<'a,T>{
-    consumer:Option<&'a mut Consumer<T,MutexReactor>>,
+struct ReadChunkAsync<'a,T,U:AsyncReactor>{
+    consumer:Option<&'a mut Consumer<T,U>>,
     n:usize,
-    waker:Option<Waker>,
+    registered:bool,
 }
-impl<T> Unpin for ReadChunkAsync<'_,T>{}
-impl<'a,T> Future for ReadChunkAsync<'a,T>{
-    type Output = Result<ReadChunk<'a,T,MutexReactor>,AsyncChunkError>;
+impl<T,U:AsyncReactor> Unpin for ReadChunkAsync<'_,T,U>{}
+impl<'a,T,U:AsyncReactor> Future for ReadChunkAsync<'a,T,U>{
+    type Output = Result<ReadChunk<'a,T,U>,AsyncChunkError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
@@ -552,8 +640,7 @@ impl<'a,T> Future for ReadChunkAsync<'a,T>{
         let buffer = &consumer.buffer;
         let capacity = buffer.capacity;
         let head = consumer.head.get();
-        let waker = &mut this.waker;
-        if waker.is_none(){
+        if !this.registered{
             
 
             // Check if the queue has *possibly* not enough slots.
@@ -568,35 +655,18 @@ impl<'a,T> Future for ReadChunkAsync<'a,T>{
                     if capacity < n{
                         return Ready(Err(AsyncChunkError::ExceedCapacity(capacity)));
                     }else{
-                        let mut guard = buffer.reactor.state.lock();
-                        // Refresh the tail ...
-                        let tail = buffer.tail.load(Ordering::Relaxed);
-                        consumer.tail.set(tail);
-
-                        // ... and check if there *really* are not enough slots.
-                        let slots = buffer.distance(head, tail);
-                        if slots < n{
-                            let state = guard.deref_mut();
-                            return match *state{
-                                MutexReactorState::Registered(_, insufficient_slots) => {
-                                    Ready(Err(AsyncChunkError::WillDeadlock(insufficient_slots,slots)))
-                                },
-                                MutexReactorState::Abandoned => {
-                                    Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(slots)))
-                                },
-                                MutexReactorState::Unregistered => {
-                                    *state = MutexReactorState::Registered(cx.waker().clone(),n- slots);
-                                    *waker = Some(cx.waker().clone());
-                                    Poll::Pending
-                                },
-                            }
+                        match U::register_read_slots_available(consumer, cx.waker(), n){
+                            AsyncReactorRegisterResult::Registered => return Poll::Pending,
+                            AsyncReactorRegisterResult::AlreadyAvailable => (),
+                            AsyncReactorRegisterResult::TooFewSlotsAndAbandoned(available_slots) => return Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(available_slots))),
+                            AsyncReactorRegisterResult::WillDeadlock(required, available_slots) => return Ready(Err(AsyncChunkError::WillDeadlock(required,available_slots))),
                         }
                     }
                 }
             }
             
         }else{
-            this.waker = None;
+            this.registered = false;
             // Refresh the tail ...
             let tail = buffer.tail.load(Ordering::Acquire);
             consumer.tail.set(tail);
@@ -618,16 +688,10 @@ impl<'a,T> Future for ReadChunkAsync<'a,T>{
         }))
     }
 }
-impl<T> Drop  for ReadChunkAsync<'_,T>{
+impl<T,U:AsyncReactor> Drop for ReadChunkAsync<'_,T,U>{
     fn drop(&mut self) {
-        if let Some(waker) = std::mem::take(&mut self.waker){
-            let mut guard = self.consumer.as_ref().unwrap().buffer.reactor.state.lock();
-            let state = guard.deref_mut();
-            if let MutexReactorState::Registered(current_waker,_) = state{
-                if waker.will_wake(current_waker){
-                    *state = MutexReactorState::Unregistered;
-                }
-            }
+        if self.registered{
+            self.consumer.as_ref().unwrap().buffer.reactor.unregister_read_slots_available();
         }
     }
 }
