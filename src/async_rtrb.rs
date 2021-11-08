@@ -474,7 +474,7 @@ impl<'a,T> Future for WriteChunkUninitAsync<'a,T>{
                     }else{
                         let mut guard = buffer.reactor.state.lock();
                         // Refresh the head ...
-                        let head = buffer.head.load(Ordering::Acquire);
+                        let head = buffer.head.load(Ordering::Relaxed);
                         producer.head.set(head);
 
                         // ... and check if there *really* are not enough slots.
@@ -570,7 +570,7 @@ impl<'a,T> Future for ReadChunkAsync<'a,T>{
                     }else{
                         let mut guard = buffer.reactor.state.lock();
                         // Refresh the tail ...
-                        let tail = buffer.tail.load(Ordering::Acquire);
+                        let tail = buffer.tail.load(Ordering::Relaxed);
                         consumer.tail.set(tail);
 
                         // ... and check if there *really* are not enough slots.
