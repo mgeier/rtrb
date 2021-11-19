@@ -5,20 +5,20 @@ use core::fmt;
 
 use crate::{Consumer, Reactor, Producer, RingBuffer, chunks::{ReadChunk, WriteChunk, WriteChunkUninit}};
 
-use self::{async_reactor::{AsyncReactor, MutexReactor}, chunks::AsyncChunkError};
+use self::{async_reactor::{AsyncReactor, CommitterWaitFreeReactor}, chunks::AsyncChunkError};
 
 /// [`RingBuffer`] which supports async read write.
-pub type AsyncRingBuffer<T> = RingBuffer<T,MutexReactor>;
+pub type AsyncRingBuffer<T> = RingBuffer<T,CommitterWaitFreeReactor>;
 /// [`Producer`] which supports async write.
-pub type AsyncProducer<T> = Producer<T,MutexReactor>;
+pub type AsyncProducer<T> = Producer<T,CommitterWaitFreeReactor>;
 /// [`Consumer`] which supports async read.
-pub type AsyncConsumer<T> = Consumer<T,MutexReactor>;
+pub type AsyncConsumer<T> = Consumer<T,CommitterWaitFreeReactor>;
 /// [`WriteChunk`] from [`AsyncProducer`].
-pub type AsyncWriteChunk<'a,T> = WriteChunk<'a,T,MutexReactor>;
+pub type AsyncWriteChunk<'a,T> = WriteChunk<'a,T,CommitterWaitFreeReactor>;
 /// [`WriteChunkUninit`] from [`AsyncProducer`].
-pub type AsyncWriteChunkUninit<'a,T> = WriteChunkUninit<'a,T,MutexReactor>;
+pub type AsyncWriteChunkUninit<'a,T> = WriteChunkUninit<'a,T,CommitterWaitFreeReactor>;
 /// [`ReadChunk`] from [`AsyncConsumer`].
-pub type AsyncReadChunk<'a,T> = ReadChunk<'a,T,MutexReactor>;
+pub type AsyncReadChunk<'a,T> = ReadChunk<'a,T,CommitterWaitFreeReactor>;
 
 impl<T> RingBuffer<T>{
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
@@ -43,7 +43,7 @@ impl<T> RingBuffer<T>{
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new_async(capacity: usize) -> (AsyncProducer<T>, AsyncConsumer<T>) {
-        RingBuffer::<T,MutexReactor>::with_reactor(capacity)
+        RingBuffer::<T,CommitterWaitFreeReactor>::with_reactor(capacity)
     }
 }
 
@@ -260,11 +260,11 @@ impl<T,U:AsyncReactor> Consumer<T,U>{
 
 impl<T,U:Reactor> Drop for Producer<T,U>{
     fn drop(&mut self) {
-        self.buffer.reactor.abandoned();
+        U::dropping_producer(self);
     }
 }
 impl<T,U:Reactor> Drop for Consumer<T,U>{
     fn drop(&mut self) {
-        self.buffer.reactor.abandoned();
+        U::dropping_consumer(self);
     }
 }

@@ -1,40 +1,31 @@
+use crate::{Consumer, Producer};
 #[cfg(feature = "async")]
 pub use crate::async_rtrb::async_reactor::*;
 /// Actually used when async read write operations.
 pub trait Reactor:Default{
     /// Should call when new read slots are available. Should be called from producer thread.
-    fn pushed(&self,n:usize);
-    /// Should call when new read slots are available. Should be called from producer thread.
-    fn pushed1(&self){
-        self.pushed(1);
-    }
+    fn pushed<T>(producer:&Producer<T,Self>);
     /// Should call when new write slots are available. Should be called from consumer thread.
-    fn popped(&self,n:usize);
-    /// Should call when new write slots are available. Should be called from consumer thread.
-    fn popped1(&self){
-        self.popped(1);
-    }
-    /// Should call when consumer or producer has been abandoned.
-    fn abandoned(&self);
-    }
+    fn popped<T>(consumer:&Consumer<T,Self>);
+    
+    fn dropping_producer<T>(producer:&Producer<T,Self>);
 
+    fn dropping_consumer<T>(consumer:&Consumer<T,Self>);
+}
 /// Notifier which doesn't do any actual notification.
 #[derive(Debug,Default)]
 pub struct DummyReactor;
 
 impl Reactor for DummyReactor{
     #[inline]
-    fn pushed(&self,_n:usize) {}
+    fn pushed<T>(_producer:&Producer<T,Self>) {}
 
     #[inline]
-    fn pushed1(&self){}
+    fn popped<T>(_consumer:&Consumer<T,Self>) {}
 
     #[inline]
-    fn popped(&self,_n:usize) {}
+    fn dropping_producer<T>(_producer:&Producer<T,Self>) {}
 
     #[inline]
-    fn popped1(&self){}
-
-    #[inline]
-    fn abandoned(&self) {}
+    fn dropping_consumer<T>(_consumer:&Consumer<T,Self>) {}
 }

@@ -471,7 +471,7 @@ impl<T,U:Reactor> WriteChunkUninit<'_, T,U> {
         let tail = self.producer.buffer.increment(self.producer.tail.get(), n);
         self.producer.buffer.tail.store(tail, Ordering::Release);
         self.producer.tail.set(tail);
-        self.producer.buffer.reactor.pushed(n);
+        U::pushed(self.producer);
         n
     }
 
@@ -675,7 +675,7 @@ impl<T,U:Reactor> ReadChunk<'_, T,U> {
         let head = self.consumer.buffer.increment(head, n);
         self.consumer.buffer.head.store(head, Ordering::Release);
         self.consumer.head.set(head);
-        self.consumer.buffer.reactor.popped(n);
+        U::popped(self.consumer);
         n
     }
 
@@ -734,7 +734,7 @@ impl<'a, T,U:Reactor> Drop for ReadChunkIntoIter<'a, T,U> {
             .increment(consumer.head.get(), self.iterated);
         consumer.buffer.head.store(head, Ordering::Release);
         consumer.head.set(head);
-        consumer.buffer.reactor.popped(self.iterated);
+        U::popped(consumer);
     }
 }
 

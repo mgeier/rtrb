@@ -336,7 +336,7 @@ impl<T,U:Reactor> Producer<T,U> {
             let tail = self.buffer.increment1(tail);
             self.buffer.tail.store(tail, Ordering::Release);
             self.tail.set(tail);
-            self.buffer.reactor.pushed1();
+            U::pushed(self);
             Ok(())
         } else {
             Err(PushError::Full(value))
@@ -550,7 +550,7 @@ impl<T,U:Reactor> Consumer<T,U> {
             let head = self.buffer.increment1(head);
             self.buffer.head.store(head, Ordering::Release);
             self.head.set(head);
-            self.buffer.reactor.popped1();
+            U::popped(self);
             Ok(value)
         } else {
             Err(PopError::Empty)
