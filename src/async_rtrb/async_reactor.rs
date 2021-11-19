@@ -30,10 +30,11 @@ pub struct CommitterWaitFreeReactor{
 }
 
 const WAITING:usize = 0;
-const REGISTERING:usize = 0b0001;
-const ABANDONED:usize = 0b0010;
-const UNREGISTERED:usize = 0b0100;
-const WAKING:usize = 0b1000;
+const REGISTERING:usize = 0b00001;
+const ABANDONED:usize = 0b00010;
+const UNREGISTERED_PRODUCER:usize = 0b00100;
+const UNREGISTERED_CONSUMER:usize = 0b01000;
+const WAKING:usize = 0b10000;
 const MAX_WAKINGS:usize = usize::MAX >> WAKING.trailing_zeros();
 impl Reactor for CommitterWaitFreeReactor{
     
@@ -44,20 +45,21 @@ impl Reactor for CommitterWaitFreeReactor{
             return;
         }
         match reactor.state.fetch_add(WAKING,Ordering::Acquire){
-            WAITING=> {
-                let available_slots = producer.buffer.distance(buffer.head.load(Ordering::Relaxed), producer.tail.get());
-                if reactor.required_slots.get() <= available_slots{
-                    if let Some(waker) = unsafe{(*reactor.consumer_waker.get()).take()}{
-                        waker.wake();
-                    }
-                }
-                reactor.state.fetch_sub(WAKING,Ordering::Release);
-            },
-            UNREGISTERED => {
+            UNREGISTERED_CONSUMER => {
                 unsafe{(*reactor.consumer_waker.get()) = None};
-                reactor.state.fetch_sub(WAKING | UNREGISTERED,Ordering::Release);
+                reactor.state.fetch_sub(WAKING | UNREGISTERED_CONSUMER,Ordering::Release);
             },
             s => {
+                if s & !UNREGISTERED_PRODUCER == 0 {
+                    let available_slots = producer.buffer.distance(buffer.head.load(Ordering::Relaxed), producer.tail.get());
+                    if reactor.required_slots.get() <= available_slots{
+                        if let Some(waker) = unsafe{(*reactor.consumer_waker.get()).take()}{
+                            waker.wake();
+                        }
+                    }
+                    reactor.state.fetch_sub(WAKING | (s & UNREGISTERED_PRODUCER),Ordering::Release);
+                    return;
+                }
                 if s & ABANDONED != 0{
                     producer.head.set(buffer.head.load(Ordering::Relaxed));
                     reactor.cached_abandoned.set(true);
@@ -76,20 +78,21 @@ impl Reactor for CommitterWaitFreeReactor{
             return;
         }
         match reactor.state.fetch_add(WAKING,Ordering::Acquire){
-            WAITING=> {
-                let available_slots = buffer.capacity - consumer.buffer.distance(consumer.head.get(), buffer.tail.load(Ordering::Relaxed));
-                if reactor.required_slots.get() <= available_slots{
-                    if let Some(waker) = unsafe{(*reactor.producer_waker.get()).take()}{
-                        waker.wake();
-                    }
-                }
-                reactor.state.fetch_sub(WAKING,Ordering::Release);
-            },
-            UNREGISTERED => {
+            UNREGISTERED_PRODUCER => {
                 unsafe{(*reactor.producer_waker.get()) = None};
-                reactor.state.fetch_sub(WAKING | UNREGISTERED,Ordering::Release);
+                reactor.state.fetch_sub(WAKING | UNREGISTERED_PRODUCER,Ordering::Release);
             },
             s => {
+                if s & !UNREGISTERED_CONSUMER == 0 {
+                    let available_slots = buffer.capacity - consumer.buffer.distance(consumer.head.get(), buffer.tail.load(Ordering::Relaxed));
+                    if reactor.required_slots.get() <= available_slots{
+                        if let Some(waker) = unsafe{(*reactor.producer_waker.get()).take()}{
+                            waker.wake();
+                        }
+                    }
+                    reactor.state.fetch_sub(WAKING | (s & UNREGISTERED_CONSUMER),Ordering::Release);
+                    return;
+                }
                 if s & ABANDONED != 0{
                     consumer.tail.set(buffer.tail.load(Ordering::Relaxed));
                     reactor.cached_abandoned.set(true);
@@ -142,11 +145,11 @@ impl AsyncReactor for CommitterWaitFreeReactor{
         loop{
             match state.compare_exchange_weak(expected, REGISTERING, Ordering::Acquire, Ordering::Acquire){
                 Ok(_) => {
-                    if expected == UNREGISTERED{
-                        unsafe{
-                            *reactor.producer_waker.get() = None;
-                            *reactor.consumer_waker.get() = None;
-                        }
+                    if expected & UNREGISTERED_PRODUCER != 0{
+                        unsafe{*reactor.producer_waker.get() = None};
+                    }
+                    if expected & UNREGISTERED_CONSUMER !=0{
+                        unsafe{*reactor.consumer_waker.get() = None};
                     }
                     let read_slots = buffer.distance(head, tail.load(Ordering::Acquire));
                     let available_slots = read_slots;
@@ -192,7 +195,7 @@ impl AsyncReactor for CommitterWaitFreeReactor{
                     if required_slots <= available_slots{
                         return AsyncReactorRegisterResult::AlreadyAvailable;
                     }
-                    expected = actual & UNREGISTERED;
+                    expected = actual & (UNREGISTERED_PRODUCER | UNREGISTERED_CONSUMER);
                 },
             }
         }
@@ -224,11 +227,11 @@ impl AsyncReactor for CommitterWaitFreeReactor{
         loop{
             match state.compare_exchange_weak(expected, REGISTERING, Ordering::Acquire, Ordering::Acquire){
                 Ok(_) => {
-                    if expected == UNREGISTERED{
-                        unsafe{
-                            *reactor.producer_waker.get() = None;
-                            *reactor.consumer_waker.get() = None;
-                        }
+                    if expected & UNREGISTERED_PRODUCER != 0{
+                        unsafe{*reactor.producer_waker.get() = None};
+                    }
+                    if expected & UNREGISTERED_CONSUMER !=0{
+                        unsafe{*reactor.consumer_waker.get() = None};
                     }
                     let read_slots = buffer.distance(head.load(Ordering::Acquire), tail);
                     let available_slots = capacity - read_slots;
@@ -273,7 +276,7 @@ impl AsyncReactor for CommitterWaitFreeReactor{
                     if required_slots <= available_slots{
                         return AsyncReactorRegisterResult::AlreadyAvailable;
                     }
-                    expected = actual & UNREGISTERED;
+                    expected = actual & (UNREGISTERED_PRODUCER | UNREGISTERED_CONSUMER);
                 },
             }
         }
@@ -290,10 +293,10 @@ impl AsyncReactor for CommitterWaitFreeReactor{
     }
 
     fn unregister_read_slots_available(&self) {
-        self.state.fetch_or(UNREGISTERED, Ordering::Release);
+        self.state.fetch_or(UNREGISTERED_CONSUMER, Ordering::Release);
     }
 
     fn unregister_write_slots_available(&self) {
-        self.state.fetch_or(UNREGISTERED, Ordering::Release);
+        self.state.fetch_or(UNREGISTERED_PRODUCER, Ordering::Release);
     }
 }
