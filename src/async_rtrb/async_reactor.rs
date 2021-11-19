@@ -51,7 +51,7 @@ impl Reactor for CommitterWaitFreeReactor{
             },
             s => {
                 if s & !UNREGISTERED_PRODUCER == 0 {
-                    let available_slots = producer.buffer.distance(buffer.head.load(Ordering::Relaxed), producer.tail.get());
+                    let available_slots = producer.buffer.distance(buffer.head.load(Ordering::Acquire), producer.tail.get());
                     if reactor.required_slots.get() <= available_slots{
                         if let Some(waker) = unsafe{(*reactor.consumer_waker.get()).take()}{
                             waker.wake();
@@ -84,7 +84,7 @@ impl Reactor for CommitterWaitFreeReactor{
             },
             s => {
                 if s & !UNREGISTERED_CONSUMER == 0 {
-                    let available_slots = buffer.capacity - consumer.buffer.distance(consumer.head.get(), buffer.tail.load(Ordering::Relaxed));
+                    let available_slots = buffer.capacity - consumer.buffer.distance(consumer.head.get(), buffer.tail.load(Ordering::Acquire));
                     if reactor.required_slots.get() <= available_slots{
                         if let Some(waker) = unsafe{(*reactor.producer_waker.get()).take()}{
                             waker.wake();
