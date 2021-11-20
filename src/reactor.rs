@@ -1,15 +1,15 @@
 use crate::{Consumer, Producer};
 #[cfg(feature = "async")]
 pub use crate::async_rtrb::async_reactor::*;
-/// Actually used when async read write operations.
+/// Used for internal event handling.
 pub trait Reactor:Default{
-    /// Should call when new read slots are available. Should be called from producer thread.
+    /// Called when new read slots are available. Should be called from producer thread.
     fn pushed<T>(producer:&Producer<T,Self>);
-    /// Should call when new write slots are available. Should be called from consumer thread.
+    /// Called when new write slots are available. Should be called from consumer thread.
     fn popped<T>(consumer:&Consumer<T,Self>);
-    
+    /// Called when dropping producer.
     fn dropping_producer<T>(producer:&Producer<T,Self>);
-
+    /// Called when dropping consumer.
     fn dropping_consumer<T>(consumer:&Consumer<T,Self>);
 }
 /// Notifier which doesn't do any actual notification.

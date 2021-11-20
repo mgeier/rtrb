@@ -62,12 +62,13 @@ use cache_padded::CachePadded;
 
 pub mod chunks;
 mod reactor;
+pub use reactor::Reactor;
 #[cfg(feature = "async")]
 mod async_rtrb;
 #[cfg(feature = "async")]
 pub use async_rtrb::{AsyncRingBuffer,AsyncProducer,AsyncConsumer,AsyncWriteChunk,AsyncWriteChunkUninit,AsyncReadChunk,AsyncPushError,AsyncPopError,AsyncPeekError};
 
-use reactor::{DummyReactor, Reactor};
+use reactor::{DummyReactor};
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
