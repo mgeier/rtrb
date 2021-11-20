@@ -90,13 +90,15 @@ impl<T,U:AsyncReactor> Producer<T,U>{
     /// # Examples
     ///
     /// ```
-    /// use rtrb::{RingBuffer, PushError};
+    /// use rtrb::{RingBuffer, AsyncPushError};
     ///
-    /// let (mut p, c) = RingBuffer::new_async(1);
+    /// async{
+    ///     let (mut p, c) = RingBuffer::new_async(1);
     ///
-    /// assert_eq!(p.push_async(10).await, Ok(()));
-    /// drop(c);
-    /// assert_eq!(p.push_async(20).await, Err(AsyncPushError::FullAndAbandoned(20)));
+    ///     assert_eq!(p.push_async(10).await, Ok(()));
+    ///     drop(c);
+    ///     assert_eq!(p.push_async(20).await, Err(AsyncPushError::FullAndAbandoned(20)));
+    /// };
     /// ```
     pub async fn push_async(&mut self,value:T) -> Result<(),AsyncPushError<T>>{
         // TODO:Faster implementation  
@@ -178,23 +180,27 @@ impl<T,U:AsyncReactor> Consumer<T,U>{
     /// # Examples
     ///
     /// ```
-    /// use rtrb::{PopError, RingBuffer};
+    /// use rtrb::{AsyncPopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new_async(1);
+    /// async{
+    ///     let (mut p, mut c) = RingBuffer::new_async(1);
     ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.pop_async().await, Ok(10));
-    /// drop(p);
-    /// assert_eq!(c.pop_async().await, Err(AsyncPopError::EmptyAndAbandoned));
+    ///     assert_eq!(p.push(10), Ok(()));
+    ///     assert_eq!(c.pop_async().await, Ok(10));
+    ///     drop(p);
+    ///     assert_eq!(c.pop_async().await, Err(AsyncPopError::EmptyAndAbandoned));
+    /// };
     /// ```
     ///
     /// To obtain an [`Option<T>`](Option), use [`.ok()`](Result::ok) on the result.
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new_async(1);
-    /// assert_eq!(p.push_async(20).await, Ok(()));
-    /// assert_eq!(c.pop_async().await.ok(), Some(20));
+    /// async{
+    ///     let (mut p, mut c) = RingBuffer::new_async(1);
+    ///     assert_eq!(p.push_async(20).await, Ok(()));
+    ///     assert_eq!(c.pop_async().await.ok(), Some(20));
+    /// };
     /// ```
     pub async fn pop_async(&mut self) -> Result<T,AsyncPopError>{
         // TODO:Faster implementation  
@@ -226,13 +232,15 @@ impl<T,U:AsyncReactor> Consumer<T,U>{
     /// # Examples
     ///
     /// ```
-    /// use rtrb::{PeekError, RingBuffer};
+    /// use rtrb::{AsyncPeekError, RingBuffer};
     ///
-    /// let (mut p, c) = RingBuffer::new_async(1);
+    /// async{
+    ///     let (mut p,mut c) = RingBuffer::new_async(1);
     ///
-    /// assert_eq!(p.push(10), Ok(()));
-    /// assert_eq!(c.peek_async().await, Ok(&10));
-    /// assert_eq!(c.peek_async().await, Ok(&10));
+    ///     assert_eq!(p.push(10), Ok(()));
+    ///     assert_eq!(c.peek_async().await, Ok(&10));
+    ///     assert_eq!(c.peek_async().await, Ok(&10));
+    /// };
     /// ```
     pub async fn peek_async(&mut self) -> Result<&T,AsyncPeekError>{
         // TODO:Faster implementation  

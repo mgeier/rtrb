@@ -92,6 +92,7 @@ pub struct RingBuffer<T,U:Reactor = DummyReactor> {
     tail: CachePadded<AtomicUsize>,
 
     /// Wake up awaiting futures when new slots are available.
+    #[cfg_attr(not(feature = "async"), allow(dead_code))]
     reactor:CachePadded<U>,
 
     /// The buffer holding slots.
