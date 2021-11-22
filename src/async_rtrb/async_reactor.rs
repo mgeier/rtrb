@@ -44,7 +44,7 @@ impl Reactor for CommitterWaitFreeReactor{
         if reactor.cached_abandoned.get(){
             return;
         }
-        match reactor.state.fetch_add(WAKING,Ordering::Acquire){
+        match reactor.state.fetch_add(WAKING,Ordering::AcqRel){
             UNREGISTERED_CONSUMER => {
                 unsafe{(*reactor.consumer_waker.get()) = None};
                 reactor.state.fetch_sub(WAKING | UNREGISTERED_CONSUMER,Ordering::Release);
@@ -77,7 +77,7 @@ impl Reactor for CommitterWaitFreeReactor{
         if reactor.cached_abandoned.get(){
             return;
         }
-        match reactor.state.fetch_add(WAKING,Ordering::Acquire){
+        match reactor.state.fetch_add(WAKING,Ordering::AcqRel){
             UNREGISTERED_PRODUCER => {
                 unsafe{(*reactor.producer_waker.get()) = None};
                 reactor.state.fetch_sub(WAKING | UNREGISTERED_PRODUCER,Ordering::Release);
