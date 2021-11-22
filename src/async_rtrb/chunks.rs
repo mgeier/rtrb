@@ -116,7 +116,7 @@ pub enum AsyncChunkError{
 }
 
 impl fmt::Display for AsyncChunkError{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> core::fmt::Result {
         match self{
             AsyncChunkError::TooFewSlotsAndAbandoned(available_slots) => 
             alloc::format!("Only {} slots available in ring buffer ,and it will never increase because it was abandoned",available_slots).fmt(f),
@@ -192,7 +192,7 @@ impl<'a,T,U:AsyncReactor> Future for WriteChunkUninitAsync<'a,T,U>{
             first_len,
             second_ptr: buffer.data_ptr,
             second_len: n - first_len,
-            producer: std::mem::take(&mut this.producer).unwrap(),
+            producer: core::mem::take(&mut this.producer).unwrap(),
         }))
     }
 }
@@ -264,7 +264,7 @@ impl<'a,T,U:AsyncReactor> Future for ReadChunkAsync<'a,T,U>{
             first_len,
             second_ptr: buffer.data_ptr,
             second_len: n - first_len,
-            consumer: std::mem::take(&mut this.consumer).unwrap(),
+            consumer: core::mem::take(&mut this.consumer).unwrap(),
         }))
     }
 }

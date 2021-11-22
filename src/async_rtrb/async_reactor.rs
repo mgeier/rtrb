@@ -1,5 +1,4 @@
-use core::{sync::atomic::Ordering, task::Waker};
-use std::{cell::{Cell, UnsafeCell}, fmt::Debug, sync::atomic::AtomicUsize};
+use core::{cell::{Cell, UnsafeCell}, fmt::Debug, sync::atomic::{AtomicUsize, Ordering}, task::Waker};
 
 use crate::{Consumer, Producer,reactor::Reactor};
 
