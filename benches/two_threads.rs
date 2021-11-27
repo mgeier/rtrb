@@ -41,14 +41,16 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
                 push(&mut p, 42);
             }
             let barrier = Arc::new(Barrier::new(2));
-            let barrier_in_thread = Arc::clone(&barrier);
-            let push_thread = std::thread::spawn(move || {
-                barrier_in_thread.wait();
-                for _ in 0..iters {
-                    push(&mut p, black_box(42));
-                }
-                barrier_in_thread.wait();
-            });
+            let push_thread = {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for _ in 0..iters {
+                        push(&mut p, black_box(42));
+                    }
+                    barrier.wait();
+                })
+            };
             barrier.wait();
             let start = std::time::Instant::now();
             for _ in 0..iters {
@@ -66,14 +68,16 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
             // Queue is very short in order to force a lot of contention between threads.
             let (mut p, mut c) = create(2);
             let barrier = Arc::new(Barrier::new(2));
-            let barrier_in_thread = Arc::clone(&barrier);
-            let push_thread = std::thread::spawn(move || {
-                barrier_in_thread.wait();
-                for _ in 0..iters {
-                    while !push(&mut p, black_box(42)) {}
-                }
-                barrier_in_thread.wait();
-            });
+            let push_thread = {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for _ in 0..iters {
+                        while !push(&mut p, black_box(42)) {}
+                    }
+                    barrier.wait();
+                })
+            };
             barrier.wait();
             let start = std::time::Instant::now();
             for _ in 0..iters {
