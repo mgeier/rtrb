@@ -164,7 +164,10 @@ impl<'a,T,U:AsyncReactor> Future for WriteChunkUninitAsync<'a,T,U>{
                         return Ready(Err(AsyncChunkError::ExceedCapacity(capacity)));
                     }else{
                         match U::register_write_slots_available(producer, cx.waker(), n){
-                            AsyncReactorRegisterResult::Registered => return Poll::Pending,
+                            AsyncReactorRegisterResult::Registered => {
+                                this.registered = true;
+                                return Poll::Pending
+                            },
                             AsyncReactorRegisterResult::AlreadyAvailable => (),
                             AsyncReactorRegisterResult::TooFewSlotsAndAbandoned(available_slots) => return Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(available_slots))),
                             AsyncReactorRegisterResult::WillDeadlock(required, available_slots) => return Ready(Err(AsyncChunkError::WillDeadlock(required,available_slots))),
@@ -236,7 +239,10 @@ impl<'a,T,U:AsyncReactor> Future for ReadChunkAsync<'a,T,U>{
                         return Ready(Err(AsyncChunkError::ExceedCapacity(capacity)));
                     }else{
                         match U::register_read_slots_available(consumer, cx.waker(), n){
-                            AsyncReactorRegisterResult::Registered => return Poll::Pending,
+                            AsyncReactorRegisterResult::Registered => {
+                                this.registered = true;
+                                return Poll::Pending;
+                            },
                             AsyncReactorRegisterResult::AlreadyAvailable => (),
                             AsyncReactorRegisterResult::TooFewSlotsAndAbandoned(available_slots) => return Ready(Err(AsyncChunkError::TooFewSlotsAndAbandoned(available_slots))),
                             AsyncReactorRegisterResult::WillDeadlock(required, available_slots) => return Ready(Err(AsyncChunkError::WillDeadlock(required,available_slots))),
