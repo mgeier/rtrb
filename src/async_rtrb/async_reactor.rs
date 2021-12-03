@@ -57,13 +57,16 @@ impl Reactor for CommitterWaitFreeReactor{
                         }
                     }
                     reactor.state.fetch_sub(WAKING | (s & UNREGISTERED_PRODUCER),Ordering::Release);
-                    return;
                 }
-                if s & ABANDONED != 0{
+                else if s & (REGISTERING | ABANDONED) == 0 {
+                    debug_assert!(s >> WAKING.trailing_zeros() == 1);
+                    reactor.state.fetch_sub(WAKING,Ordering::Release);
+                }
+                else if s & ABANDONED != 0{
                     producer.head.set(buffer.head.load(Ordering::Relaxed));
                     reactor.cached_abandoned.set(true);
                 }
-                if s >= !(WAKING-1){
+                else if s >= !(WAKING-1){
                     panic!("Commited more than {} times while opponent thread is registering. This might be a bug or opponent thread has been aborted.",MAX_WAKINGS)
                 }
             },
@@ -90,13 +93,16 @@ impl Reactor for CommitterWaitFreeReactor{
                         }
                     }
                     reactor.state.fetch_sub(WAKING | (s & UNREGISTERED_CONSUMER),Ordering::Release);
-                    return;
                 }
-                if s & ABANDONED != 0{
+                else if s & (REGISTERING | ABANDONED) == 0 {
+                    debug_assert!(s >> WAKING.trailing_zeros() == 1);
+                    reactor.state.fetch_sub(WAKING,Ordering::Release);
+                }
+                else if s & ABANDONED != 0{
                     consumer.tail.set(buffer.tail.load(Ordering::Relaxed));
                     reactor.cached_abandoned.set(true);
                 }
-                if s >= !(WAKING-1){
+                else if s >= !(WAKING-1){
                     panic!("Commited more than {} times while opponent thread is registering. This might be a bug or opponent thread has been aborted.",MAX_WAKINGS)
                 }
             },
