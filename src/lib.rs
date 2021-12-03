@@ -61,7 +61,14 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use cache_padded::CachePadded;
 
 pub mod chunks;
+mod reactor;
+pub use reactor::Reactor;
+#[cfg(feature = "async")]
+mod async_rtrb;
+#[cfg(feature = "async")]
+pub use async_rtrb::{AsyncRingBuffer,AsyncProducer,AsyncConsumer,AsyncWriteChunk,AsyncWriteChunkUninit,AsyncReadChunk,AsyncPushError,AsyncPopError,AsyncPeekError};
 
+use reactor::{DummyReactor};
 // This is used in the documentation.
 #[allow(unused_imports)]
 use chunks::WriteChunkUninit;
@@ -73,7 +80,7 @@ use chunks::WriteChunkUninit;
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
-pub struct RingBuffer<T> {
+pub struct RingBuffer<T,U:Reactor = DummyReactor> {
     /// The head of the queue.
     ///
     /// This integer is in range `0 .. 2 * capacity`.
@@ -84,6 +91,10 @@ pub struct RingBuffer<T> {
     /// This integer is in range `0 .. 2 * capacity`.
     tail: CachePadded<AtomicUsize>,
 
+    /// Wake up awaiting futures when new slots are available.
+    #[cfg_attr(not(feature = "async"), allow(dead_code))]
+    reactor:CachePadded<U>,
+
     /// The buffer holding slots.
     data_ptr: *mut T,
 
@@ -93,8 +104,7 @@ pub struct RingBuffer<T> {
     /// Indicates that dropping a `RingBuffer<T>` may drop elements of type `T`.
     _marker: PhantomData<T>,
 }
-
-impl<T> RingBuffer<T> {
+impl<T> RingBuffer<T>{
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
     /// # Examples
@@ -117,12 +127,21 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        Self::with_reactor(capacity)
+    }
+}
+impl<T,U:Reactor> RingBuffer<T,U> {
+    /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
+    #[allow(clippy::new_ret_no_self)]
+    #[must_use]
+    fn with_reactor(capacity: usize) -> (Producer<T,U>, Consumer<T,U>) {
         let buffer = Arc::new(RingBuffer {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
             _marker: PhantomData,
+            reactor: Default::default(),
         });
         let p = Producer {
             buffer: buffer.clone(),
@@ -209,7 +228,7 @@ impl<T> RingBuffer<T> {
     }
 }
 
-impl<T> Drop for RingBuffer<T> {
+impl<T,U:Reactor> Drop for RingBuffer<T,U> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
         let mut head = self.head.load(Ordering::Relaxed);
@@ -230,7 +249,7 @@ impl<T> Drop for RingBuffer<T> {
     }
 }
 
-impl<T> PartialEq for RingBuffer<T> {
+impl<T,U:Reactor> PartialEq for RingBuffer<T,U> {
     /// This method tests for `self` and `other` values to be equal, and is used by `==`.
     ///
     /// # Examples
@@ -250,7 +269,7 @@ impl<T> PartialEq for RingBuffer<T> {
     }
 }
 
-impl<T> Eq for RingBuffer<T> {}
+impl<T,U:Reactor> Eq for RingBuffer<T,U> {}
 
 /// The producer side of a [`RingBuffer`].
 ///
@@ -274,9 +293,9 @@ impl<T> Eq for RingBuffer<T> {}
 /// When the `Producer` is dropped after the [`Consumer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Producer<T> {
+pub struct Producer<T,U:Reactor = DummyReactor> {
     /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+    buffer: Arc<RingBuffer<T,U>>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -289,9 +308,9 @@ pub struct Producer<T> {
     tail: Cell<usize>,
 }
 
-unsafe impl<T: Send> Send for Producer<T> {}
+unsafe impl<T: Send,U:Reactor> Send for Producer<T,U> {}
 
-impl<T> Producer<T> {
+impl<T,U:Reactor> Producer<T,U> {
     /// Attempts to push an element into the queue.
     ///
     /// The element is *moved* into the ring buffer and its slot
@@ -319,6 +338,7 @@ impl<T> Producer<T> {
             let tail = self.buffer.increment1(tail);
             self.buffer.tail.store(tail, Ordering::Release);
             self.tail.set(tail);
+            U::pushed(self);
             Ok(())
         } else {
             Err(PushError::Full(value))
@@ -432,7 +452,7 @@ impl<T> Producer<T> {
     }
 
     /// Returns a read-only reference to the ring buffer.
-    pub fn buffer(&self) -> &RingBuffer<T> {
+    pub fn buffer(&self) -> &RingBuffer<T,U> {
         &self.buffer
     }
 
@@ -479,9 +499,9 @@ impl<T> Producer<T> {
 /// When the `Consumer` is dropped after the [`Producer`] has already been dropped,
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Consumer<T> {
+pub struct Consumer<T,U:Reactor = DummyReactor> {
     /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+    buffer: Arc<RingBuffer<T,U>>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -494,9 +514,9 @@ pub struct Consumer<T> {
     tail: Cell<usize>,
 }
 
-unsafe impl<T: Send> Send for Consumer<T> {}
+unsafe impl<T: Send,U:Reactor> Send for Consumer<T,U> {}
 
-impl<T> Consumer<T> {
+impl<T,U:Reactor> Consumer<T,U> {
     /// Attempts to pop an element from the queue.
     ///
     /// The element is *moved* out of the ring buffer and its slot
@@ -532,6 +552,7 @@ impl<T> Consumer<T> {
             let head = self.buffer.increment1(head);
             self.buffer.head.store(head, Ordering::Release);
             self.head.set(head);
+            U::popped(self);
             Ok(value)
         } else {
             Err(PopError::Empty)
@@ -670,7 +691,7 @@ impl<T> Consumer<T> {
     }
 
     /// Returns a read-only reference to the ring buffer.
-    pub fn buffer(&self) -> &RingBuffer<T> {
+    pub fn buffer(&self) -> &RingBuffer<T,U> {
         &self.buffer
     }
 

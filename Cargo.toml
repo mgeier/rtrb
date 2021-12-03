@@ -20,6 +20,7 @@ exclude = [
 [features]
 default = ["std"]
 std = []
+async = []
 
 [dependencies]
 cache-padded = "1.1"
@@ -27,6 +28,7 @@ cache-padded = "1.1"
 [dev-dependencies]
 rand = "0.7"
 criterion = "0.3"
+tokio = {version = "1.13.0", features = ["rt","macros","time"]}
 
 [lib]
 bench = false # Don't disturb criterion command line parsing
