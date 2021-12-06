@@ -337,7 +337,8 @@ impl<T> Producer<T> {
     pub fn slots(&self) -> usize {
         let head = self.buffer.head.load(Ordering::Acquire);
         self.cached_head.set(head);
-        let tail = self.buffer.tail.load(Ordering::Acquire);
+        // "tail" is only ever written by the producer thread, "Relaxed" is enough
+        let tail = self.buffer.tail.load(Ordering::Relaxed);
         self.buffer.capacity - self.buffer.distance(head, tail)
     }
 
@@ -433,7 +434,8 @@ impl<T> Producer<T> {
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
-        let tail = self.buffer.tail.load(Ordering::Acquire);
+        // "tail" is only ever written by the producer thread, "Relaxed" is enough
+        let tail = self.buffer.tail.load(Ordering::Relaxed);
 
         // Check if the queue is *possibly* full.
         if self.buffer.distance(self.cached_head.get(), tail) == self.buffer.capacity {
@@ -569,9 +571,10 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.slots(), 0);
     /// ```
     pub fn slots(&self) -> usize {
-        let head = self.buffer.head.load(Ordering::Acquire);
         let tail = self.buffer.tail.load(Ordering::Acquire);
         self.cached_tail.set(tail);
+        // "head" is only ever written by the consumer thread, "Relaxed" is enough
+        let head = self.buffer.head.load(Ordering::Relaxed);
         self.buffer.distance(head, tail)
     }
 
@@ -666,7 +669,8 @@ impl<T> Consumer<T> {
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is immplemented separately.
     fn next_head(&self) -> Option<usize> {
-        let head = self.buffer.head.load(Ordering::Acquire);
+        // "head" is only ever written by the consumer thread, "Relaxed" is enough
+        let head = self.buffer.head.load(Ordering::Relaxed);
 
         // Check if the queue is *possibly* empty.
         if head == self.cached_tail.get() {
