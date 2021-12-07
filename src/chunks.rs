@@ -563,9 +563,11 @@ impl<T> WriteChunkUninit<'_, T> {
 /// This is returned from [`Consumer::read_chunk()`].
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReadChunk<'a, T> {
-    first_ptr: *const T,
+    // Must be "mut" for drop_in_place()
+    first_ptr: *mut T,
     first_len: usize,
-    second_ptr: *const T,
+    // Must be "mut" for drop_in_place()
+    second_ptr: *mut T,
     second_len: usize,
     consumer: &'a mut Consumer<T>,
 }
@@ -654,19 +656,15 @@ impl<T> ReadChunk<'_, T> {
     }
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let head = self.consumer.head.get();
-        // Safety: head has not yet been incremented
-        let first_ptr = self.consumer.buffer.slot_ptr(head);
         let first_len = self.first_len.min(n);
         for i in 0..first_len {
-            first_ptr.add(i).drop_in_place();
+            self.first_ptr.add(i).drop_in_place();
         }
-        let second_ptr = self.consumer.buffer.data_ptr;
         let second_len = self.second_len.min(n - first_len);
         for i in 0..second_len {
-            second_ptr.add(i).drop_in_place();
+            self.second_ptr.add(i).drop_in_place();
         }
-        let head = self.consumer.buffer.increment(head, n);
+        let head = self.consumer.buffer.increment(self.consumer.head.get(), n);
         self.consumer.buffer.head.store(head, Ordering::Release);
         self.consumer.head.set(head);
         n
