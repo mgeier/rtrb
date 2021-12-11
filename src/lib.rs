@@ -50,13 +50,12 @@
 
 extern crate alloc;
 
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use core::cell::Cell;
+use core::cell::{Cell, UnsafeCell};
 use core::fmt;
 use core::marker::PhantomData;
-use core::mem::{ManuallyDrop, MaybeUninit};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::mem::MaybeUninit;
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use cache_padded::CachePadded;
 
@@ -73,6 +72,7 @@ use chunks::WriteChunkUninit;
 ///
 /// *See also the [crate-level documentation](crate).*
 #[derive(Debug)]
+#[repr(C)]
 pub struct RingBuffer<T> {
     /// The head of the queue.
     ///
@@ -84,14 +84,14 @@ pub struct RingBuffer<T> {
     /// This integer is in range `0 .. 2 * capacity`.
     tail: CachePadded<AtomicUsize>,
 
-    /// The buffer holding slots.
-    data_ptr: *mut T,
-
-    /// The queue capacity.
-    capacity: usize,
+    /// `true` if one of producer/consumer has been dropped.
+    is_abandoned: AtomicBool,
 
     /// Indicates that dropping a `RingBuffer<T>` may drop elements of type `T`.
     _marker: PhantomData<T>,
+
+    /// Storage for the ring buffer elements (dynamically sized).
+    slots: UnsafeCell<[MaybeUninit<T>]>,
 }
 
 impl<T> RingBuffer<T> {
@@ -117,22 +117,55 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        let buffer = Arc::new(RingBuffer {
-            head: CachePadded::new(AtomicUsize::new(0)),
-            tail: CachePadded::new(AtomicUsize::new(0)),
-            data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
-            capacity,
-            _marker: PhantomData,
-        });
+        use alloc::alloc::Layout;
+        // Start with an empty layout ...
+        let layout = Layout::new::<()>();
+        // ... and add all fields from RingBuffer, which must have #[repr(C)] for this to work.
+        let (layout, head_offset) = layout
+            .extend(Layout::new::<CachePadded<AtomicUsize>>())
+            .unwrap();
+        assert_eq!(head_offset, 0);
+        let (layout, tail_offset) = layout
+            .extend(Layout::new::<CachePadded<AtomicUsize>>())
+            .unwrap();
+        let (layout, is_abandoned_offset) = layout.extend(Layout::new::<AtomicBool>()).unwrap();
+        let (layout, _slots_offset) = layout
+            .extend(Layout::array::<T>(capacity).unwrap())
+            .unwrap();
+        let layout = layout.pad_to_align();
+
+        let buffer = unsafe {
+            let ptr = alloc::alloc::alloc(layout);
+            if ptr.is_null() {
+                alloc::alloc::handle_alloc_error(layout);
+            }
+            ptr.add(head_offset)
+                .cast::<CachePadded<AtomicUsize>>()
+                .write(CachePadded::new(AtomicUsize::new(0)));
+            ptr.add(tail_offset)
+                .cast::<CachePadded<AtomicUsize>>()
+                .write(CachePadded::new(AtomicUsize::new(0)));
+            ptr.add(is_abandoned_offset)
+                .cast::<AtomicBool>()
+                .write(AtomicBool::new(false));
+            // Create a (fat) pointer to a slice ...
+            let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast::<T>(), capacity);
+            // ... and coerce it into our own dynamically sized type:
+            let ptr = ptr as *mut RingBuffer<T>;
+            // Safety: Null check has been done above
+            NonNull::new_unchecked(ptr)
+        };
         let p = Producer {
-            buffer: buffer.clone(),
+            buffer,
             cached_head: Cell::new(0),
             cached_tail: Cell::new(0),
+            _marker: PhantomData,
         };
         let c = Consumer {
             buffer,
             cached_head: Cell::new(0),
             cached_tail: Cell::new(0),
+            _marker: PhantomData,
         };
         (p, c)
     }
@@ -151,32 +184,37 @@ impl<T> RingBuffer<T> {
     /// assert_eq!(producer.buffer(), consumer.buffer());
     /// ```
     pub fn capacity(&self) -> usize {
-        self.capacity
+        let slice_ptr = self.slots.get();
+        // Safety: We are only accessing the length, which never changes.  Shared access is OK.
+        unsafe { (*slice_ptr).len() }
     }
 
     /// Wraps a position from the range `0 .. 2 * capacity` to `0 .. capacity`.
     fn collapse_position(&self, pos: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        if pos < self.capacity {
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        if pos < self.capacity() {
             pos
         } else {
-            pos - self.capacity
+            pos - self.capacity()
         }
     }
 
-    /// Returns a pointer to the slot at position `pos`.
+    /// Returns a pointer to the (possibly uninitialized) slot at position `pos`.
     ///
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        self.data_ptr.add(self.collapse_position(pos))
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        let slice_ptr = self.slots.get();
+        (*slice_ptr)
+            .get_unchecked_mut(self.collapse_position(pos))
+            .as_mut_ptr()
     }
 
     /// Increments a position by going `n` slots forward.
     fn increment(&self, pos: usize, n: usize) -> usize {
-        debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        debug_assert!(n <= self.capacity);
-        let threshold = 2 * self.capacity - n;
+        debug_assert!(pos == 0 || pos < 2 * self.capacity());
+        debug_assert!(n <= self.capacity());
+        let threshold = 2 * self.capacity() - n;
         if pos < threshold {
             pos + n
         } else {
@@ -188,9 +226,9 @@ impl<T> RingBuffer<T> {
     ///
     /// This is more efficient than self.increment(..., 1).
     fn increment1(&self, pos: usize) -> usize {
-        debug_assert_ne!(self.capacity, 0);
-        debug_assert!(pos < 2 * self.capacity);
-        if pos < 2 * self.capacity - 1 {
+        debug_assert_ne!(self.capacity(), 0);
+        debug_assert!(pos < 2 * self.capacity());
+        if pos < 2 * self.capacity() - 1 {
             pos + 1
         } else {
             0
@@ -199,19 +237,51 @@ impl<T> RingBuffer<T> {
 
     /// Returns the distance between two positions.
     fn distance(&self, a: usize, b: usize) -> usize {
-        debug_assert!(a == 0 || a < 2 * self.capacity);
-        debug_assert!(b == 0 || b < 2 * self.capacity);
+        debug_assert!(a == 0 || a < 2 * self.capacity());
+        debug_assert!(b == 0 || b < 2 * self.capacity());
         if a <= b {
             b - a
         } else {
-            2 * self.capacity - a + b
+            2 * self.capacity() - a + b
         }
     }
+}
+
+#[inline]
+unsafe fn abandon<T>(buffer: NonNull<RingBuffer<T>>) {
+    // The two threads (producer and consumer) must observe the same order of accesses
+    // to `is_abandoned`.  This is accomplished with Acquire/Release.
+    if buffer
+        .as_ref()
+        .is_abandoned
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_ok()
+    {
+        // The flag wasn't set before, so we are the first to abandon the RingBuffer
+        // and it should not be dropped yet.
+    } else {
+        // The flag was already set, i.e. the other thread has already abandoned
+        // the RingBuffer and it can be dropped now.
+        drop_slow(buffer);
+    }
+}
+
+/// Non-inlined part of `abandon()`.
+#[inline(never)]
+unsafe fn drop_slow<T>(buffer: NonNull<RingBuffer<T>>) {
+    // Turn the pointer into a Box and immediately drop it,
+    // which deallocates the memory allocated in `RingBuffer::new()`.
+    //
+    // Safety: This is allowed because the RingBuffer has been allocated with the
+    // Global allocator (see `RingBuffer::new()`).
+    let _ = alloc::boxed::Box::from_raw(buffer.as_ptr());
 }
 
 impl<T> Drop for RingBuffer<T> {
     /// Drops all non-empty slots.
     fn drop(&mut self) {
+        // The threads have already been synchronized in `abandon()`,
+        // Relaxed ordering is sufficient here.
         let mut head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
 
@@ -221,11 +291,6 @@ impl<T> Drop for RingBuffer<T> {
                 self.slot_ptr(head).drop_in_place();
             }
             head = self.increment1(head);
-        }
-
-        // Finally, deallocate the buffer, but don't run any destructors.
-        unsafe {
-            Vec::from_raw_parts(self.data_ptr, 0, self.capacity);
         }
     }
 }
@@ -274,8 +339,8 @@ impl<T> Eq for RingBuffer<T> {}
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
-    /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+    /// A (fat) pointer to the ring buffer.
+    buffer: NonNull<RingBuffer<T>>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -286,9 +351,20 @@ pub struct Producer<T> {
     ///
     /// This value is always in sync with `buffer.tail`.
     cached_tail: Cell<usize>,
+
+    /// Indicates that dropping a `Producer<T>` may drop a `RingBuffer<T>`.
+    _marker: PhantomData<RingBuffer<T>>,
 }
 
 unsafe impl<T: Send> Send for Producer<T> {}
+
+impl<T> Drop for Producer<T> {
+    #[inline]
+    fn drop(&mut self) {
+        // Safety: The pointer is valid until after the second call to `abandon()`.
+        unsafe { abandon(self.buffer) };
+    }
+}
 
 impl<T> Producer<T> {
     /// Attempts to push an element into the queue.
@@ -312,11 +388,12 @@ impl<T> Producer<T> {
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
+            let buffer = self.buffer();
             unsafe {
-                self.buffer.slot_ptr(tail).write(value);
+                buffer.slot_ptr(tail).write(value);
             }
-            let tail = self.buffer.increment1(tail);
-            self.buffer.tail.store(tail, Ordering::Release);
+            let tail = buffer.increment1(tail);
+            buffer.tail.store(tail, Ordering::Release);
             self.cached_tail.set(tail);
             Ok(())
         } else {
@@ -343,9 +420,10 @@ impl<T> Producer<T> {
     /// assert_eq!(p.slots(), 1024);
     /// ```
     pub fn slots(&self) -> usize {
-        let head = self.buffer.head.load(Ordering::Acquire);
+        let buffer = self.buffer();
+        let head = buffer.head.load(Ordering::Acquire);
         self.cached_head.set(head);
-        self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
+        buffer.capacity() - buffer.distance(head, self.cached_tail.get())
     }
 
     /// Returns `true` if there are currently no slots available for writing.
@@ -427,12 +505,13 @@ impl<T> Producer<T> {
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+        self.buffer().is_abandoned.load(Ordering::Acquire)
     }
 
     /// Returns a read-only reference to the ring buffer.
     pub fn buffer(&self) -> &RingBuffer<T> {
-        &self.buffer
+        // Safety: The pointer is always valid.
+        unsafe { self.buffer.as_ref() }
     }
 
     /// Get the tail position for writing the next slot, if available.
@@ -441,15 +520,16 @@ impl<T> Producer<T> {
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
         let tail = self.cached_tail.get();
+        let buffer = self.buffer();
 
         // Check if the queue is *possibly* full.
-        if self.buffer.distance(self.cached_head.get(), tail) == self.buffer.capacity {
+        if buffer.distance(self.cached_head.get(), tail) == buffer.capacity() {
             // Refresh the head ...
-            let head = self.buffer.head.load(Ordering::Acquire);
+            let head = buffer.head.load(Ordering::Acquire);
             self.cached_head.set(head);
 
             // ... and check if it's *really* full.
-            if self.buffer.distance(head, tail) == self.buffer.capacity {
+            if buffer.distance(head, tail) == buffer.capacity() {
                 return None;
             }
         }
@@ -479,8 +559,8 @@ impl<T> Producer<T> {
 /// [`RingBuffer::drop()`] will be called, freeing the allocated memory.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
-    /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+    /// A (fat) pointer to the ring buffer.
+    buffer: NonNull<RingBuffer<T>>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -491,9 +571,20 @@ pub struct Consumer<T> {
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
     cached_tail: Cell<usize>,
+
+    /// Indicates that dropping a `Consumer<T>` may drop a `RingBuffer<T>`.
+    _marker: PhantomData<RingBuffer<T>>,
 }
 
 unsafe impl<T: Send> Send for Consumer<T> {}
+
+impl<T> Drop for Consumer<T> {
+    #[inline]
+    fn drop(&mut self) {
+        // Safety: The pointer is valid until after the second call to `abandon()`.
+        unsafe { abandon(self.buffer) };
+    }
+}
 
 impl<T> Consumer<T> {
     /// Attempts to pop an element from the queue.
@@ -527,9 +618,10 @@ impl<T> Consumer<T> {
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
-            let value = unsafe { self.buffer.slot_ptr(head).read() };
-            let head = self.buffer.increment1(head);
-            self.buffer.head.store(head, Ordering::Release);
+            let buffer = self.buffer();
+            let value = unsafe { buffer.slot_ptr(head).read() };
+            let head = buffer.increment1(head);
+            buffer.head.store(head, Ordering::Release);
             self.cached_head.set(head);
             Ok(value)
         } else {
@@ -557,7 +649,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
-            Ok(unsafe { &*self.buffer.slot_ptr(head) })
+            Ok(unsafe { &*self.buffer().slot_ptr(head) })
         } else {
             Err(PeekError::Empty)
         }
@@ -582,9 +674,9 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.slots(), 0);
     /// ```
     pub fn slots(&self) -> usize {
-        let tail = self.buffer.tail.load(Ordering::Acquire);
+        let tail = self.buffer().tail.load(Ordering::Acquire);
         self.cached_tail.set(tail);
-        self.buffer.distance(self.cached_head.get(), tail)
+        self.buffer().distance(self.cached_head.get(), tail)
     }
 
     /// Returns `true` if there are currently no slots available for reading.
@@ -665,12 +757,13 @@ impl<T> Consumer<T> {
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+        self.buffer().is_abandoned.load(Ordering::Acquire)
     }
 
     /// Returns a read-only reference to the ring buffer.
     pub fn buffer(&self) -> &RingBuffer<T> {
-        &self.buffer
+        // Safety: The pointer is always valid
+        unsafe { self.buffer.as_ref() }
     }
 
     /// Get the head position for reading the next slot, if available.
@@ -683,7 +776,7 @@ impl<T> Consumer<T> {
         // Check if the queue is *possibly* empty.
         if head == self.cached_tail.get() {
             // Refresh the tail ...
-            let tail = self.buffer.tail.load(Ordering::Acquire);
+            let tail = self.buffer().tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
 
             // ... and check if it's *really* empty.
