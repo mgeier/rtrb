@@ -465,10 +465,10 @@ impl<T> WriteChunkUninit<'_, T> {
     }
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let tail = self.producer.cached_tail.get();
-        let tail = self.producer.buffer.increment(tail, n);
-        self.producer.buffer.tail.store(tail, Ordering::Release);
-        self.producer.cached_tail.set(tail);
+        let p = self.producer;
+        let tail = p.buffer.increment(p.cached_tail.get(), n);
+        p.buffer.tail.store(tail, Ordering::Release);
+        p.cached_tail.set(tail);
         n
     }
 
@@ -665,10 +665,10 @@ impl<T> ReadChunk<'_, T> {
         for i in 0..second_len {
             self.second_ptr.add(i).drop_in_place();
         }
-        let head = self.consumer.cached_head.get();
-        let head = self.consumer.buffer.increment(head, n);
-        self.consumer.buffer.head.store(head, Ordering::Release);
-        self.consumer.cached_head.set(head);
+        let c = self.consumer;
+        let head = c.buffer.increment(c.cached_head.get(), n);
+        c.buffer.head.store(head, Ordering::Release);
+        c.cached_head.set(head);
         n
     }
 
@@ -719,12 +719,10 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
-        let consumer = &self.chunk.consumer;
-        let head = consumer
-            .buffer
-            .increment(consumer.cached_head.get(), self.iterated);
-        consumer.buffer.head.store(head, Ordering::Release);
-        consumer.cached_head.set(head);
+        let c = &self.chunk.consumer;
+        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
+        c.buffer.head.store(head, Ordering::Release);
+        c.cached_head.set(head);
     }
 }
 
