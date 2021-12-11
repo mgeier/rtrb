@@ -237,13 +237,13 @@ impl<T> Producer<T> {
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
-        let tail = self.tail.get();
+        let tail = self.cached_tail.get();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.buffer.capacity - self.buffer.distance(self.head.get(), tail) < n {
+        if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) < n {
             // Refresh the head ...
             let head = self.buffer.head.load(Ordering::Acquire);
-            self.head.set(head);
+            self.cached_head.set(head);
 
             // ... and check if there *really* are not enough slots.
             let slots = self.buffer.capacity - self.buffer.distance(head, tail);
@@ -286,13 +286,13 @@ impl<T> Consumer<T> {
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let head = self.head.get();
+        let head = self.cached_head.get();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.buffer.distance(head, self.tail.get()) < n {
+        if self.buffer.distance(head, self.cached_tail.get()) < n {
             // Refresh the tail ...
             let tail = self.buffer.tail.load(Ordering::Acquire);
-            self.tail.set(tail);
+            self.cached_tail.set(tail);
 
             // ... and check if there *really* are not enough slots.
             let slots = self.buffer.distance(head, tail);
@@ -465,9 +465,10 @@ impl<T> WriteChunkUninit<'_, T> {
     }
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let tail = self.producer.buffer.increment(self.producer.tail.get(), n);
+        let tail = self.producer.cached_tail.get();
+        let tail = self.producer.buffer.increment(tail, n);
         self.producer.buffer.tail.store(tail, Ordering::Release);
-        self.producer.tail.set(tail);
+        self.producer.cached_tail.set(tail);
         n
     }
 
@@ -664,9 +665,10 @@ impl<T> ReadChunk<'_, T> {
         for i in 0..second_len {
             self.second_ptr.add(i).drop_in_place();
         }
-        let head = self.consumer.buffer.increment(self.consumer.head.get(), n);
+        let head = self.consumer.cached_head.get();
+        let head = self.consumer.buffer.increment(head, n);
         self.consumer.buffer.head.store(head, Ordering::Release);
-        self.consumer.head.set(head);
+        self.consumer.cached_head.set(head);
         n
     }
 
@@ -720,9 +722,9 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
         let consumer = &self.chunk.consumer;
         let head = consumer
             .buffer
-            .increment(consumer.head.get(), self.iterated);
+            .increment(consumer.cached_head.get(), self.iterated);
         consumer.buffer.head.store(head, Ordering::Release);
-        consumer.head.set(head);
+        consumer.cached_head.set(head);
     }
 }
 

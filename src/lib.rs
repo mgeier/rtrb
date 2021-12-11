@@ -126,13 +126,13 @@ impl<T> RingBuffer<T> {
         });
         let p = Producer {
             buffer: buffer.clone(),
-            head: Cell::new(0),
-            tail: Cell::new(0),
+            cached_head: Cell::new(0),
+            cached_tail: Cell::new(0),
         };
         let c = Consumer {
             buffer,
-            head: Cell::new(0),
-            tail: Cell::new(0),
+            cached_head: Cell::new(0),
+            cached_tail: Cell::new(0),
         };
         (p, c)
     }
@@ -281,12 +281,12 @@ pub struct Producer<T> {
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
-    head: Cell<usize>,
+    cached_head: Cell<usize>,
 
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value is always in sync with `buffer.tail`.
-    tail: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 unsafe impl<T: Send> Send for Producer<T> {}
@@ -318,7 +318,7 @@ impl<T> Producer<T> {
             }
             let tail = self.buffer.increment1(tail);
             self.buffer.tail.store(tail, Ordering::Release);
-            self.tail.set(tail);
+            self.cached_tail.set(tail);
             Ok(())
         } else {
             Err(PushError::Full(value))
@@ -345,8 +345,8 @@ impl<T> Producer<T> {
     /// ```
     pub fn slots(&self) -> usize {
         let head = self.buffer.head.load(Ordering::Acquire);
-        self.head.set(head);
-        self.buffer.capacity - self.buffer.distance(head, self.tail.get())
+        self.cached_head.set(head);
+        self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
     }
 
     /// Returns `true` if there are currently no slots available for writing.
@@ -441,13 +441,13 @@ impl<T> Producer<T> {
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
-        let tail = self.tail.get();
+        let tail = self.cached_tail.get();
 
         // Check if the queue is *possibly* full.
-        if self.buffer.distance(self.head.get(), tail) == self.buffer.capacity {
+        if self.buffer.distance(self.cached_head.get(), tail) == self.buffer.capacity {
             // Refresh the head ...
             let head = self.buffer.head.load(Ordering::Acquire);
-            self.head.set(head);
+            self.cached_head.set(head);
 
             // ... and check if it's *really* full.
             if self.buffer.distance(head, tail) == self.buffer.capacity {
@@ -486,12 +486,12 @@ pub struct Consumer<T> {
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
-    head: Cell<usize>,
+    cached_head: Cell<usize>,
 
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
-    tail: Cell<usize>,
+    cached_tail: Cell<usize>,
 }
 
 unsafe impl<T: Send> Send for Consumer<T> {}
@@ -531,7 +531,7 @@ impl<T> Consumer<T> {
             let value = unsafe { self.buffer.slot_ptr(head).read() };
             let head = self.buffer.increment1(head);
             self.buffer.head.store(head, Ordering::Release);
-            self.head.set(head);
+            self.cached_head.set(head);
             Ok(value)
         } else {
             Err(PopError::Empty)
@@ -584,8 +584,8 @@ impl<T> Consumer<T> {
     /// ```
     pub fn slots(&self) -> usize {
         let tail = self.buffer.tail.load(Ordering::Acquire);
-        self.tail.set(tail);
-        self.buffer.distance(self.head.get(), tail)
+        self.cached_tail.set(tail);
+        self.buffer.distance(self.cached_head.get(), tail)
     }
 
     /// Returns `true` if there are currently no slots available for reading.
@@ -679,13 +679,13 @@ impl<T> Consumer<T> {
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is immplemented separately.
     fn next_head(&self) -> Option<usize> {
-        let head = self.head.get();
+        let head = self.cached_head.get();
 
         // Check if the queue is *possibly* empty.
-        if head == self.tail.get() {
+        if head == self.cached_tail.get() {
             // Refresh the tail ...
             let tail = self.buffer.tail.load(Ordering::Acquire);
-            self.tail.set(tail);
+            self.cached_tail.set(tail);
 
             // ... and check if it's *really* empty.
             if head == tail {
