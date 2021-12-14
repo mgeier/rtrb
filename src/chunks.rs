@@ -373,13 +373,28 @@ where
 
     /// Makes the first `n` slots of the chunk available for reading.
     ///
+    /// The rest of the chunk is dropped.
+    ///
     /// # Panics
     ///
     /// Panics if `n` is greater than the number of slots in the chunk.
     pub fn commit(self, n: usize) {
-        // Safety: All slots have been initialized in From::from() and there are no destructors.
+        assert!(n <= self.len(), "cannot commit more than chunk size");
+        for i in n..self.0.first_len {
+            // Safety: All slots have been initialized in From::from().
+            unsafe {
+                self.0.first_ptr.add(i).drop_in_place();
+            }
+        }
+        for i in n.saturating_sub(self.0.first_len)..self.0.second_len {
+            // Safety: All slots have been initialized in From::from().
+            unsafe {
+                self.0.second_ptr.add(i).drop_in_place();
+            }
+        }
+        // Safety: All slots have been initialized in From::from().
         unsafe {
-            self.0.commit(n);
+            self.0.commit_unchecked(n);
         }
     }
 
