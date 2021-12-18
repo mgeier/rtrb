@@ -321,7 +321,20 @@ impl<T> Consumer<T> {
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>);
+pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>);
+
+impl<T> Drop for WriteChunk<'_, T> {
+    fn drop(&mut self) {
+        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
+        if let Some(mut chunk) = self.0.take() {
+            // Safety: All slots have been initialized in From::from().
+            unsafe {
+                // No part of the chunk has been committed, all slots are dropped.
+                chunk.drop_suffix(0);
+            }
+        }
+    }
+}
 
 impl<'a, T> From<WriteChunkUninit<'a, T>> for WriteChunk<'a, T>
 where
@@ -339,7 +352,7 @@ where
                 chunk.second_ptr.add(i).write(Default::default());
             }
         }
-        WriteChunk(chunk)
+        WriteChunk(Some(chunk))
     }
 }
 
@@ -362,11 +375,13 @@ where
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.as_ref().unwrap();
         // Safety: All slots have been initialized in From::from().
         unsafe {
             (
-                core::slice::from_raw_parts_mut(self.0.first_ptr, self.0.first_len),
-                core::slice::from_raw_parts_mut(self.0.second_ptr, self.0.second_len),
+                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
+                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
             )
         }
     }
@@ -378,44 +393,42 @@ where
     /// # Panics
     ///
     /// Panics if `n` is greater than the number of slots in the chunk.
-    pub fn commit(self, n: usize) {
-        assert!(n <= self.len(), "cannot commit more than chunk size");
-        for i in n..self.0.first_len {
-            // Safety: All slots have been initialized in From::from().
-            unsafe {
-                self.0.first_ptr.add(i).drop_in_place();
-            }
-        }
-        for i in n.saturating_sub(self.0.first_len)..self.0.second_len {
-            // Safety: All slots have been initialized in From::from().
-            unsafe {
-                self.0.second_ptr.add(i).drop_in_place();
-            }
-        }
+    pub fn commit(mut self, n: usize) {
+        // self.0 is always Some(chunk).
+        let mut chunk = self.0.take().unwrap();
         // Safety: All slots have been initialized in From::from().
         unsafe {
-            self.0.commit_unchecked(n);
+            // Slots at index `n` and higher are dropped ...
+            chunk.drop_suffix(n);
+            // ... everything below `n` is committed.
+            chunk.commit(n);
         }
+        // `self` is dropped here, with `self.0` being set to `None`.
     }
 
     /// Makes the whole chunk available for reading.
-    pub fn commit_all(self) {
+    pub fn commit_all(mut self) {
+        // self.0 is always Some(chunk).
+        let chunk = self.0.take().unwrap();
         // Safety: All slots have been initialized in From::from().
         unsafe {
-            self.0.commit_all();
+            chunk.commit_all();
         }
+        // `self` is dropped here, with `self.0` being set to `None`.
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.0.len()
+        // self.0 is always Some(chunk).
+        self.0.as_ref().unwrap().len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        // self.0 is always Some(chunk).
+        self.0.as_ref().unwrap().is_empty()
     }
 }
 
@@ -571,6 +584,19 @@ impl<T> WriteChunkUninit<'_, T> {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.first_len == 0
+    }
+
+    /// Drops all elements starting from index `n`.
+    ///
+    /// All of those slots must be initialized.
+    unsafe fn drop_suffix(&mut self, n: usize) {
+        // NB: If n >= self.len(), the loops are not entered.
+        for i in n..self.first_len {
+            self.first_ptr.add(i).drop_in_place();
+        }
+        for i in n.saturating_sub(self.first_len)..self.second_len {
+            self.second_ptr.add(i).drop_in_place();
+        }
     }
 }
 
