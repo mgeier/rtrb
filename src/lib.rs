@@ -245,8 +245,7 @@ impl<T> PartialEq for RingBuffer<T> {
     /// assert_ne!(p1.buffer(), p2.buffer());
     /// ```
     fn eq(&self, other: &Self) -> bool {
-        // There can never be multiple instances with the same `data_ptr`.
-        core::ptr::eq(self.data_ptr, other.data_ptr)
+        core::ptr::eq(self, other)
     }
 }
 
