@@ -5,20 +5,8 @@ use rand::{thread_rng, Rng};
 use rtrb::RingBuffer;
 
 #[test]
-fn smoke() {
-    let (mut p, mut c) = RingBuffer::new(1);
-
-    p.push(7).unwrap();
-    assert_eq!(c.pop(), Ok(7));
-
-    p.push(8).unwrap();
-    assert_eq!(c.pop(), Ok(8));
-    assert!(c.pop().is_err());
-}
-
-#[test]
 fn capacity() {
-    for i in 1..10 {
+    for i in 0..10 {
         let (p, c) = RingBuffer::<i32>::new(i);
         assert_eq!(p.buffer().capacity(), i);
         assert_eq!(c.buffer().capacity(), i);
