@@ -117,3 +117,29 @@ fn drop_write_chunk() {
     // RingBuffer was already empty, nothing is dropped:
     assert_eq!(unsafe { DROP_COUNT }, 7);
 }
+
+#[test]
+fn trait_impls() {
+    let (mut p, mut c) = RingBuffer::<u8>::new(0);
+
+    if let Ok(chunk) = p.write_chunk(0) {
+        assert!(format!("{:?}", chunk).starts_with("WriteChunk"));
+    } else {
+        unreachable!();
+    }
+    if let Ok(chunk) = p.write_chunk_uninit(0) {
+        assert!(format!("{:?}", chunk).starts_with("WriteChunkUninit"));
+    } else {
+        unreachable!();
+    }
+    if let Ok(chunk) = c.read_chunk(0) {
+        assert!(format!("{:?}", chunk).starts_with("ReadChunk"));
+        let iter = chunk.into_iter();
+        assert!(format!("{:?}", iter).starts_with("ReadChunkIntoIter"));
+    } else {
+        unreachable!();
+    }
+    let e = c.read_chunk(100).unwrap_err();
+    assert_eq!(format!("{:?}", e), "TooFewSlots(0)");
+    assert_eq!(e.to_string(), "only 0 slots available in ring buffer");
+}

@@ -118,3 +118,23 @@ fn drops() {
         assert_eq!(DROPS.load(Ordering::SeqCst), steps + additional);
     }
 }
+
+#[test]
+fn trait_impls() {
+    let (mut p, mut c) = RingBuffer::<u8>::new(0);
+
+    assert!(format!("{:?}", p.buffer()).starts_with("RingBuffer {"));
+    assert!(format!("{:?}", p).starts_with("Producer {"));
+    assert!(format!("{:?}", c).starts_with("Consumer {"));
+
+    assert_eq!(format!("{:?}", p.push(42).unwrap_err()), "Full(_)");
+    assert_eq!(p.push(42).unwrap_err().to_string(), "full ring buffer");
+    assert_eq!(format!("{:?}", c.pop().unwrap_err()), "Empty");
+    assert_eq!(c.pop().unwrap_err().to_string(), "empty ring buffer");
+    assert_eq!(format!("{:?}", c.peek().unwrap_err()), "Empty");
+    assert_eq!(c.peek().unwrap_err().to_string(), "empty ring buffer");
+
+    let (another_p, another_c) = RingBuffer::<u8>::new(0);
+    assert_ne!(p, another_p);
+    assert_ne!(c, another_c);
+}
