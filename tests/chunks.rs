@@ -1,6 +1,44 @@
 use rtrb::{chunks::ChunkError, RingBuffer};
 
 #[test]
+fn iterators() {
+    let (mut p, mut c) = RingBuffer::new(3);
+    if let Ok(chunk) = p.write_chunk_uninit(3) {
+        chunk.fill_from_iter([10, 11]);
+    } else {
+        unreachable!();
+    }
+    assert_eq!(c.slots(), 2);
+    if let Ok(chunk) = c.read_chunk(2) {
+        let mut iter = chunk.into_iter();
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.next().unwrap(), 10);
+        assert_eq!(iter.len(), 1);
+    }
+    assert_eq!(c.slots(), 1);
+    if let Ok(chunk) = p.write_chunk_uninit(p.slots()) {
+        chunk.fill_from_iter([20, 21]);
+    } else {
+        unreachable!();
+    }
+    if let Ok(chunk) = c.read_chunk(c.slots()) {
+        let mut iter = chunk.into_iter();
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.next().unwrap(), 11);
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.next().unwrap(), 20);
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.next().unwrap(), 21);
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+        for _ in 0..1000 {
+            // FusedIterator continues to yield None:
+            assert!(iter.next().is_none());
+        }
+    }
+}
+
+#[test]
 fn zero_capacity() {
     let (mut p, mut c) = RingBuffer::<i32>::new(0);
 
