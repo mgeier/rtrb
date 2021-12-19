@@ -46,6 +46,8 @@ fn zero_capacity() {
     assert_eq!(c.read_chunk(1).unwrap_err(), ChunkError::TooFewSlots(0));
 
     if let Ok(mut chunk) = p.write_chunk(0) {
+        assert_eq!(chunk.len(), 0);
+        assert!(chunk.is_empty());
         let (first, second) = chunk.as_mut_slices();
         assert!(first.is_empty());
         assert!(second.is_empty());
@@ -55,6 +57,8 @@ fn zero_capacity() {
     }
 
     if let Ok(chunk) = c.read_chunk(0) {
+        assert_eq!(chunk.len(), 0);
+        assert!(chunk.is_empty());
         let (first, second) = chunk.as_slices();
         assert!(first.is_empty());
         assert!(second.is_empty());

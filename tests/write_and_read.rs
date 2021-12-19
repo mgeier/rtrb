@@ -8,6 +8,8 @@ use rtrb::RingBuffer;
 fn write_and_read() {
     let (mut p, mut c) = RingBuffer::new(2);
     assert_eq!(p.write(&[10, 11]).unwrap(), 2);
+    // Does nothing:
+    assert!(p.flush().is_ok());
 
     {
         let mut buf = [0];
