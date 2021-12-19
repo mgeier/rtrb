@@ -50,6 +50,20 @@ Creating the HTML docs (which will be available in `target/doc/rtrb/index.html`)
 
     cargo doc
 
+To measure code coverage, nightly Rust is required, as well as a few additional dependencies:
+
+    rustup toolchain install nightly
+    rustup component add llvm-tools-preview
+    cargo install grcov
+
+Test coverage data can be obtained and analyzed with these commands:
+
+    cargo clean
+    RUSTFLAGS="-Z instrument-coverage" RUSTDOCFLAGS="-Z instrument-coverage -Z unstable-options --persist-doctests target/debug/doctestbins" LLVM_PROFILE_FILE="coverage/%p-%m.profraw" cargo +nightly test
+    grcov coverage --source-dir . --binary-path target/debug --output-type html --output-path coverage
+
+The last command creates an HTML report in `coverage/index.html`.
+
 
 Minimum Supported `rustc` Version
 ---------------------------------
