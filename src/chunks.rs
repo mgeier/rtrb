@@ -819,6 +819,7 @@ impl std::io::Write for Producer<u8> {
         Ok(end)
     }
 
+    #[inline]
     fn flush(&mut self) -> std::io::Result<()> {
         // Nothing to do here.
         Ok(())
