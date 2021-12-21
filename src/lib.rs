@@ -151,7 +151,7 @@ impl<T> RingBuffer<T> {
             // Create a (fat) pointer to a slice ...
             let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast::<T>(), capacity);
             // ... and coerce it into our own dynamically sized type:
-            let ptr = ptr as *mut RingBuffer<T>;
+            let ptr = ptr as *mut Self;
             // Safety: Null check has been done above
             NonNull::new_unchecked(ptr)
         };
