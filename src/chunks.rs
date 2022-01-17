@@ -444,6 +444,8 @@ pub struct WriteChunkUninit<'a, T> {
     producer: &'a Producer<T>,
 }
 
+unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
+
 impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
@@ -613,6 +615,8 @@ pub struct ReadChunk<'a, T> {
     second_len: usize,
     consumer: &'a mut Consumer<T>,
 }
+
+unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
 
 impl<T> ReadChunk<'_, T> {
     /// Returns two slices for reading from the requested slots.
