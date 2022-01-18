@@ -237,7 +237,7 @@ impl<T> Producer<T> {
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
-        let tail = self.cached_tail.get();
+        let tail = self.cached_tail;
 
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) < n {
@@ -286,7 +286,7 @@ impl<T> Consumer<T> {
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        let head = self.cached_head.get();
+        let head = self.cached_head;
 
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.distance(head, self.cached_tail.get()) < n {
@@ -441,7 +441,7 @@ pub struct WriteChunkUninit<'a, T> {
     first_len: usize,
     second_ptr: *mut T,
     second_len: usize,
-    producer: &'a Producer<T>,
+    producer: &'a mut Producer<T>,
 }
 
 impl<T> WriteChunkUninit<'_, T> {
@@ -494,9 +494,9 @@ impl<T> WriteChunkUninit<'_, T> {
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
-        let tail = p.buffer.increment(p.cached_tail.get(), n);
+        let tail = p.buffer.increment(p.cached_tail, n);
         p.buffer.tail.store(tail, Ordering::Release);
-        p.cached_tail.set(tail);
+        p.cached_tail = tail;
         n
     }
 
@@ -707,9 +707,9 @@ impl<T> ReadChunk<'_, T> {
             self.second_ptr.add(i).drop_in_place();
         }
         let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
+        let head = c.buffer.increment(c.cached_head, n);
         c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
+        c.cached_head = head;
         n
     }
 
@@ -760,10 +760,10 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
-        let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
+        let c = &mut self.chunk.consumer;
+        let head = c.buffer.increment(c.cached_head, self.iterated);
         c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
+        c.cached_head = head;
     }
 }
 
