@@ -611,7 +611,7 @@ pub struct ReadChunk<'a, T> {
     // Must be "mut" for drop_in_place()
     second_ptr: *mut T,
     second_len: usize,
-    consumer: &'a mut Consumer<T>,
+    consumer: &'a Consumer<T>,
 }
 
 impl<T> ReadChunk<'_, T> {
