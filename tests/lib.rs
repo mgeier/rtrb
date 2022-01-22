@@ -156,3 +156,30 @@ fn no_race_with_is_abandoned() {
     }
     t.join().unwrap();
 }
+
+#[test]
+fn memory_usage() {
+    use cache_padded::CachePadded;
+    use std::mem::{align_of_val, size_of, size_of_val};
+
+    let cacheline = size_of::<CachePadded<usize>>();
+    let fat_pointer = size_of::<&[()]>();
+
+    let size = 10 * cacheline;
+    // Memory overhead: 2 cachelines + 1 byte (+ padding)
+    let (p, c) = RingBuffer::<u8>::new(size - 2 * cacheline - 1);
+    assert_eq!(size_of_val(&p), fat_pointer + 2 * size_of::<usize>());
+    assert_eq!(size_of_val(&c), fat_pointer + 2 * size_of::<usize>());
+    assert_eq!(size_of_val(p.buffer()), size);
+    assert_eq!(align_of_val(p.buffer()), cacheline);
+
+    let (p, _c) = RingBuffer::<u8>::new(1);
+    // 2 cachelines + 1 byte + 1 byte + padding
+    assert_eq!(size_of_val(p.buffer()), 3 * cacheline);
+    assert_eq!(align_of_val(p.buffer()), cacheline);
+
+    let (p, _c) = RingBuffer::<CachePadded<u8>>::new(1);
+    // 2 cachelines + 1 byte + padding + 1 cacheline
+    assert_eq!(size_of_val(p.buffer()), 4 * cacheline);
+    assert_eq!(align_of_val(p.buffer()), cacheline);
+}
