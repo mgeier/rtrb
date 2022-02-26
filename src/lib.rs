@@ -247,7 +247,6 @@ impl<T> RingBuffer<T> {
     }
 }
 
-#[inline]
 unsafe fn abandon<T>(buffer: NonNull<RingBuffer<T>>) {
     // The two threads (producer and consumer) must observe the same order of accesses
     // to `is_abandoned`.  This is accomplished with Acquire/Release.
@@ -359,7 +358,6 @@ pub struct Producer<T> {
 unsafe impl<T: Send> Send for Producer<T> {}
 
 impl<T> Drop for Producer<T> {
-    #[inline]
     fn drop(&mut self) {
         // Safety: The pointer is valid until after the second call to `abandon()`.
         unsafe { abandon(self.buffer) };
@@ -579,7 +577,6 @@ pub struct Consumer<T> {
 unsafe impl<T: Send> Send for Consumer<T> {}
 
 impl<T> Drop for Consumer<T> {
-    #[inline]
     fn drop(&mut self) {
         // Safety: The pointer is valid until after the second call to `abandon()`.
         unsafe { abandon(self.buffer) };
