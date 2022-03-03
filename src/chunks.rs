@@ -445,6 +445,10 @@ pub struct WriteChunkUninit<'a, T> {
     producer: &'a Producer<T>,
 }
 
+// WriteChunkUninit only exists while a unique reference to the Producer is held.
+// It is therefore safe to move it to another thread.
+unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
+
 impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
     ///
@@ -614,6 +618,10 @@ pub struct ReadChunk<'a, T> {
     second_len: usize,
     consumer: &'a Consumer<T>,
 }
+
+// ReadChunk only exists while a unique reference to the Consumer is held.
+// It is therefore safe to move it to another thread.
+unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
 
 impl<T> ReadChunk<'_, T> {
     /// Returns two slices for reading from the requested slots.
