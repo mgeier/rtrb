@@ -248,20 +248,21 @@ impl<T> RingBuffer<T> {
 }
 
 unsafe fn abandon<T>(buffer: NonNull<RingBuffer<T>>) {
-    // The two threads (producer and consumer) must observe the same order of accesses
-    // to `is_abandoned`.  This is accomplished with Acquire/Release.
+    // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
+    // to the ring buffer happen before it (in the thread that abandons first).
+    // The "load" part has to use `Acquire` to make sure that reading `head` and `tail`
+    // in the destructor happens after it (in the thread that drops the `RingBuffer`).
     if buffer
         .as_ref()
         .is_abandoned
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
+        .fetch_or(true, Ordering::AcqRel)
     {
-        // The flag wasn't set before, so we are the first to abandon the RingBuffer
-        // and it should not be dropped yet.
-    } else {
         // The flag was already set, i.e. the other thread has already abandoned
         // the RingBuffer and it can be dropped now.
         drop_slow(buffer);
+    } else {
+        // The flag wasn't set before, so we are the first to abandon the RingBuffer
+        // and it should not be dropped yet.
     }
 }
 
