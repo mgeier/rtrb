@@ -250,15 +250,23 @@ impl<T> RingBuffer<T> {
 unsafe fn abandon<T>(buffer: NonNull<RingBuffer<T>>) {
     // The "store" part of `fetch_or()` has to use `Release` to make sure that any previous writes
     // to the ring buffer happen before it (in the thread that abandons first).
-    // The "load" part has to use `Acquire` to make sure that reading `head` and `tail`
-    // in the destructor happens after it (in the thread that drops the `RingBuffer`).
     if buffer
         .as_ref()
         .is_abandoned
-        .fetch_or(true, Ordering::AcqRel)
+        .fetch_or(true, Ordering::Release)
     {
-        // The flag was already set, i.e. the other thread has already abandoned
-        // the RingBuffer and it can be dropped now.
+        // The flag was already set, i.e. the other thread has already abandoned the RingBuffer
+        // and it can be dropped now.
+
+        // However, since the load of `is_abandoned` was `Relaxed`,
+        // we have to use `Acquire` here to make sure that reading `head` and `tail`
+        // in the destructor happens after this point.
+
+        // Ideally, we would use a memory fence like this:
+        //core::sync::atomic::fence(Ordering::Acquire);
+        // ... but as long as ThreadSanitizer doesn't support fences,
+        // we use load(Acquire) as a work-around to avoid false positives:
+        let _ = buffer.as_ref().is_abandoned.load(Ordering::Acquire);
         drop_slow(buffer);
     } else {
         // The flag wasn't set before, so we are the first to abandon the RingBuffer
