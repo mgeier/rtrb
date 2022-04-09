@@ -126,3 +126,23 @@ jobs:
       - name: Run Miri
         run: |
           cargo miri test
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rust-src
+      - name: Run ThreadSanitizer
+        env:
+          RUSTFLAGS: "-Z sanitizer=thread"
+        run: |
+          cargo test --tests -Z build-std --target x86_64-unknown-linux-gnu

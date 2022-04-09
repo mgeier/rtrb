@@ -68,6 +68,12 @@ Testing with Miri also needs nightly Rust:
 
     cargo +nightly miri test
 
+Running the tests with ThreadSanitizer requires nightly Rust as well:
+
+    RUSTFLAGS="-Z sanitizer=thread" cargo +nightly test --tests -Z build-std --target x86_64-unknown-linux-gnu
+
+You might have to adapt the `--target` option to your system (see e.g. `rustup show`).
+
 
 Minimum Supported `rustc` Version
 ---------------------------------
