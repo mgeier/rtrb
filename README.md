@@ -64,6 +64,10 @@ Test coverage data can be obtained and analyzed with these commands:
 
 The last command creates an HTML report in `coverage/index.html`.
 
+Testing with Miri also needs nightly Rust:
+
+    cargo +nightly miri test
+
 
 Minimum Supported `rustc` Version
 ---------------------------------

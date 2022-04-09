@@ -108,3 +108,21 @@ jobs:
       - name: Check no_std compatibility
         run: |
           cargo nono check
+
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: miri
+      - name: Run Miri
+        run: |
+          cargo miri test

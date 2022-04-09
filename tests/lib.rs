@@ -1,7 +1,3 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-use rand::{thread_rng, Rng};
-
 use rtrb::RingBuffer;
 
 #[test]
@@ -46,6 +42,7 @@ fn zero_sized_type() {
     assert!(c.peek().is_err());
 }
 
+#[cfg(not(miri))] // Miri is too slow for this
 #[test]
 fn parallel() {
     const COUNT: usize = 100_000;
@@ -70,8 +67,12 @@ fn parallel() {
     pop_thread.join().unwrap();
 }
 
+#[cfg(not(miri))] // Miri is too slow for this
 #[test]
 fn drops() {
+    use rand::{thread_rng, Rng};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     const RUNS: usize = 100;
 
     static DROPS: AtomicUsize = AtomicUsize::new(0);
