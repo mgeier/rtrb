@@ -255,7 +255,7 @@ impl<T> Producer<T> {
         }
         let tail = buffer.collapse_position(tail);
         let first_len = n.min(buffer.capacity() - tail);
-        let slice_ptr = buffer.slots.get() as *mut MaybeUninit<T>;
+        let slice_ptr = buffer.slots.get().cast::<MaybeUninit<T>>();
         // SAFETY: All indices are valid.  Since we know we have exclusive access
         // to the sub-slices and they are non-overlapping, we can make them mutable.
         let first_slice =
@@ -309,7 +309,7 @@ impl<T> Consumer<T> {
         }
         let head = buffer.collapse_position(head);
         let first_len = n.min(buffer.capacity() - head);
-        let slice_ptr = buffer.slots.get() as *mut MaybeUninit<T>;
+        let slice_ptr = buffer.slots.get().cast::<MaybeUninit<T>>();
         // SAFETY: All indices are valid.  Since we know we have exclusive access
         // to the sub-slices and they are non-overlapping, we can make them mutable.
         let first_slice =
