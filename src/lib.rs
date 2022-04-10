@@ -274,7 +274,7 @@ unsafe fn drop_slow<T>(buffer: NonNull<RingBuffer<T>>) {
     //
     // Safety: This is allowed because the RingBuffer has been allocated with the
     // Global allocator (see `RingBuffer::new()`).
-    let _ = alloc::boxed::Box::from_raw(buffer.as_ptr());
+    drop(alloc::boxed::Box::from_raw(buffer.as_ptr()));
 }
 
 impl<T> Drop for RingBuffer<T> {
