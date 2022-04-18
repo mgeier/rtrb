@@ -149,7 +149,7 @@ impl<T> RingBuffer<T> {
                 .cast::<AtomicBool>()
                 .write(AtomicBool::new(false));
             // Create a (fat) pointer to a slice ...
-            let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast::<T>(), capacity);
+            let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
             // ... and coerce it into our own dynamically sized type:
             let ptr = ptr as *mut Self;
             // Safety: Null check has been done above
