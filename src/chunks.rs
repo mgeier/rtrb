@@ -258,9 +258,12 @@ impl<T> Producer<T> {
         let slice_ptr = buffer.slots.get().cast::<MaybeUninit<T>>();
         // SAFETY: All indices are valid.  Since we know we have exclusive access
         // to the sub-slices and they are non-overlapping, we can make them mutable.
-        let first_slice =
-            unsafe { core::slice::from_raw_parts_mut(slice_ptr.add(tail), first_len) };
-        let second_slice = unsafe { core::slice::from_raw_parts_mut(slice_ptr, n - first_len) };
+        let (first_slice, second_slice) = unsafe {
+            (
+                core::slice::from_raw_parts_mut(slice_ptr.add(tail), first_len),
+                core::slice::from_raw_parts_mut(slice_ptr, n - first_len),
+            )
+        };
         Ok(WriteChunkUninit {
             first_slice,
             second_slice,
@@ -312,9 +315,12 @@ impl<T> Consumer<T> {
         let slice_ptr = buffer.slots.get().cast::<MaybeUninit<T>>();
         // SAFETY: All indices are valid.  Since we know we have exclusive access
         // to the sub-slices and they are non-overlapping, we can make them mutable.
-        let first_slice =
-            unsafe { core::slice::from_raw_parts_mut(slice_ptr.add(head), first_len) };
-        let second_slice = unsafe { core::slice::from_raw_parts_mut(slice_ptr, n - first_len) };
+        let (first_slice, second_slice) = unsafe {
+            (
+                core::slice::from_raw_parts_mut(slice_ptr.add(head), first_len),
+                core::slice::from_raw_parts_mut(slice_ptr, n - first_len),
+            )
+        };
         Ok(ReadChunk {
             first_slice,
             second_slice,
