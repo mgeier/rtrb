@@ -109,7 +109,6 @@ to wait-free SPSC implementations:
 * [npnc](https://crates.io/crates/npnc) (see `npnc::bounded::spsc` module)
 * [ringbuf](https://crates.io/crates/ringbuf)
 * [shmem-ipc](https://crates.io/crates/shmem-ipc) (see `shmem_ipc::sharedring` and `shmem_ipc::ringbuf` modules)
-* [spsc-bounded-queue](https://crates.io/crates/spsc-bounded-queue)
 
 There are also implementations in other languages:
 
