@@ -152,6 +152,11 @@ impl<T> RingBuffer<T> {
             let ptr: *mut [T] = core::ptr::slice_from_raw_parts_mut(ptr.cast(), capacity);
             // ... and coerce it into our own dynamically sized type:
             let ptr = ptr as *mut Self;
+
+            // Since Rust 1.51 addr_of_mut!((*ptr).$field_name).write(...) can be used
+            // to get a properly typed (and aligned) pointer for field initialization
+            // (instead of manually casting from `*mut u8`).
+
             // Safety: Null check has been done above
             NonNull::new_unchecked(ptr)
         };
