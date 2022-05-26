@@ -114,6 +114,7 @@ to wait-free SPSC implementations:
 There are also implementations in other languages:
 
 * [boost::lockfree::spsc_queue](https://www.boost.org/doc/libs/master/doc/html/boost/lockfree/spsc_queue.html) (C++)
+* [folly::ProducerConsumerQueue](https://github.com/facebook/folly/blob/main/folly/docs/ProducerConsumerQueue.md) (C++)
 * [JACK ring buffer](https://jackaudio.org/api/ringbuffer_8h.html)  (C)
 * [PortAudio ring buffer](http://portaudio.com/docs/v19-doxydocs-dev/pa__ringbuffer_8h.html) (C)
 * [readerwriterqueue](https://github.com/cameron314/readerwriterqueue) (C++)
