@@ -139,3 +139,20 @@ fn trait_impls() {
     assert_ne!(p, another_p);
     assert_ne!(c, another_c);
 }
+
+#[test]
+fn no_race_with_is_abandoned() {
+    static mut V: u32 = 0;
+    let (p, c) = RingBuffer::<u8>::new(7);
+    let t = std::thread::spawn(move || {
+        unsafe { V = 10 };
+        drop(p);
+    });
+    if c.is_abandoned() {
+        unsafe { V = 20 };
+    } else {
+        // This is not synchronized, both Miri and ThreadSanitizer should detect a data race:
+        //unsafe { V = 30 };
+    }
+    t.join().unwrap();
+}
