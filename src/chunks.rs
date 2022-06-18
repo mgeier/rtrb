@@ -328,7 +328,7 @@ impl<T> Drop for WriteChunk<'_, T> {
     fn drop(&mut self) {
         // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
         if let Some(mut chunk) = self.0.take() {
-            // Safety: All slots have been initialized in From::from().
+            // SAFETY: All slots have been initialized in From::from().
             unsafe {
                 // No part of the chunk has been committed, all slots are dropped.
                 chunk.drop_suffix(0);
@@ -378,7 +378,7 @@ where
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         // self.0 is always Some(chunk).
         let chunk = self.0.as_ref().unwrap();
-        // Safety: All slots have been initialized in From::from().
+        // SAFETY: All slots have been initialized in From::from().
         unsafe {
             (
                 core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
@@ -397,7 +397,7 @@ where
     pub fn commit(mut self, n: usize) {
         // self.0 is always Some(chunk).
         let mut chunk = self.0.take().unwrap();
-        // Safety: All slots have been initialized in From::from().
+        // SAFETY: All slots have been initialized in From::from().
         unsafe {
             // Slots at index `n` and higher are dropped ...
             chunk.drop_suffix(n);
@@ -411,7 +411,7 @@ where
     pub fn commit_all(mut self) {
         // self.0 is always Some(chunk).
         let chunk = self.0.take().unwrap();
-        // Safety: All slots have been initialized in From::from().
+        // SAFETY: All slots have been initialized in From::from().
         unsafe {
             chunk.commit_all();
         }
@@ -565,7 +565,7 @@ impl<T> WriteChunkUninit<'_, T> {
             for i in 0..len {
                 match iter.next() {
                     Some(item) => {
-                        // Safety: It is allowed to write to this memory slot
+                        // SAFETY: It is allowed to write to this memory slot
                         unsafe {
                             ptr.add(i).write(item);
                         }
@@ -575,7 +575,7 @@ impl<T> WriteChunkUninit<'_, T> {
                 }
             }
         }
-        // Safety: iterated slots have been initialized above
+        // SAFETY: iterated slots have been initialized above
         unsafe { self.commit_unchecked(iterated) }
     }
 
@@ -821,7 +821,7 @@ impl std::io::Write for Producer<u8> {
         // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
         buf[..mid].copy_to_uninit(first);
         buf[mid..end].copy_to_uninit(second);
-        // Safety: All slots have been initialized
+        // SAFETY: All slots have been initialized
         unsafe {
             chunk.commit_all();
         }
