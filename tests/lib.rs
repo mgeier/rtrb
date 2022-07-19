@@ -42,10 +42,9 @@ fn zero_sized_type() {
     assert!(c.peek().is_err());
 }
 
-#[cfg(not(miri))] // Miri is too slow for this
 #[test]
 fn parallel() {
-    const COUNT: usize = 100_000;
+    const COUNT: usize = if cfg!(miri) { 1_000 } else { 100_000 };
     let (mut p, mut c) = RingBuffer::new(3);
     let pop_thread = std::thread::spawn(move || {
         for i in 0..COUNT {
@@ -67,13 +66,12 @@ fn parallel() {
     pop_thread.join().unwrap();
 }
 
-#[cfg(not(miri))] // Miri is too slow for this
 #[test]
 fn drops() {
     use rand::{thread_rng, Rng};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    const RUNS: usize = 100;
+    const RUNS: usize = if cfg!(miri) { 10 } else { 100 };
 
     static DROPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -89,7 +87,7 @@ fn drops() {
     let mut rng = thread_rng();
 
     for _ in 0..RUNS {
-        let steps = rng.gen_range(0..10_000);
+        let steps = rng.gen_range(0..if cfg!(miri) { 100 } else { 10_000 });
         let additional = rng.gen_range(0..50);
 
         DROPS.store(0, Ordering::SeqCst);
