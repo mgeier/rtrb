@@ -239,26 +239,34 @@ impl<T> Producer<T> {
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let tail = self.cached_tail.get();
+        let buffer = self.buffer();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) < n {
+        if buffer.capacity() - buffer.distance(self.cached_head.get(), tail) < n {
             // Refresh the head ...
-            let head = self.buffer.head.load(Ordering::Acquire);
+            let head = buffer.head.load(Ordering::Acquire);
             self.cached_head.set(head);
 
             // ... and check if there *really* are not enough slots.
-            let slots = self.buffer.capacity - self.buffer.distance(head, tail);
+            let slots = buffer.capacity() - buffer.distance(head, tail);
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-        let tail = self.buffer.collapse_position(tail);
-        let first_len = n.min(self.buffer.capacity - tail);
+        let tail = buffer.collapse_position(tail);
+        let first_len = n.min(buffer.capacity() - tail);
+        let slice_ptr = buffer.slots.get().cast::<MaybeUninit<T>>();
+        // SAFETY: All indices are valid.  Since we know we have exclusive access
+        // to the sub-slices and they are non-overlapping, we can make them mutable.
+        let (first_slice, second_slice) = unsafe {
+            (
+                core::slice::from_raw_parts_mut(slice_ptr.add(tail), first_len),
+                core::slice::from_raw_parts_mut(slice_ptr, n - first_len),
+            )
+        };
         Ok(WriteChunkUninit {
-            first_ptr: unsafe { self.buffer.data_ptr.add(tail) },
-            first_len,
-            second_ptr: self.buffer.data_ptr,
-            second_len: n - first_len,
+            first_slice,
+            second_slice,
             producer: self,
         })
     }
@@ -288,27 +296,34 @@ impl<T> Consumer<T> {
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.cached_head.get();
+        let buffer = self.buffer();
 
         // Check if the queue has *possibly* not enough slots.
-        if self.buffer.distance(head, self.cached_tail.get()) < n {
+        if buffer.distance(head, self.cached_tail.get()) < n {
             // Refresh the tail ...
-            let tail = self.buffer.tail.load(Ordering::Acquire);
+            let tail = buffer.tail.load(Ordering::Acquire);
             self.cached_tail.set(tail);
 
             // ... and check if there *really* are not enough slots.
-            let slots = self.buffer.distance(head, tail);
+            let slots = buffer.distance(head, tail);
             if slots < n {
                 return Err(ChunkError::TooFewSlots(slots));
             }
         }
-
-        let head = self.buffer.collapse_position(head);
-        let first_len = n.min(self.buffer.capacity - head);
+        let head = buffer.collapse_position(head);
+        let first_len = n.min(buffer.capacity() - head);
+        let slice_ptr = buffer.slots.get().cast::<MaybeUninit<T>>();
+        // SAFETY: All indices are valid.  Since we know we have exclusive access
+        // to the sub-slices and they are non-overlapping, we can make them mutable.
+        let (first_slice, second_slice) = unsafe {
+            (
+                core::slice::from_raw_parts_mut(slice_ptr.add(head), first_len),
+                core::slice::from_raw_parts_mut(slice_ptr, n - first_len),
+            )
+        };
         Ok(ReadChunk {
-            first_ptr: unsafe { self.buffer.data_ptr.add(head) },
-            first_len,
-            second_ptr: self.buffer.data_ptr,
-            second_len: n - first_len,
+            first_slice,
+            second_slice,
             consumer: self,
         })
     }
@@ -343,15 +358,13 @@ where
 {
     /// Fills all slots with the [`Default`] value.
     fn from(chunk: WriteChunkUninit<'a, T>) -> Self {
-        for i in 0..chunk.first_len {
-            unsafe {
-                chunk.first_ptr.add(i).write(Default::default());
-            }
+        // NB: Using Iterator::chain() to iterate over both slices
+        //     led to worse optimization (with rustc 1.57).
+        for slot in chunk.first_slice.iter_mut() {
+            *slot = MaybeUninit::new(Default::default());
         }
-        for i in 0..chunk.second_len {
-            unsafe {
-                chunk.second_ptr.add(i).write(Default::default());
-            }
+        for slot in chunk.second_slice.iter_mut() {
+            *slot = MaybeUninit::new(Default::default());
         }
         WriteChunk(Some(chunk), PhantomData)
     }
@@ -377,12 +390,12 @@ where
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         // self.0 is always Some(chunk).
-        let chunk = self.0.as_ref().unwrap();
+        let chunk = self.0.as_mut().unwrap();
         // SAFETY: All slots have been initialized in From::from().
         unsafe {
             (
-                core::slice::from_raw_parts_mut(chunk.first_ptr, chunk.first_len),
-                core::slice::from_raw_parts_mut(chunk.second_ptr, chunk.second_len),
+                &mut *(chunk.first_slice as *mut [_] as *mut [T]),
+                &mut *(chunk.second_slice as *mut [_] as *mut [T]),
             )
         }
     }
@@ -436,18 +449,24 @@ where
 /// Structure for writing into multiple (uninitialized) slots in one go.
 ///
 /// This is returned from [`Producer::write_chunk_uninit()`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct WriteChunkUninit<'a, T> {
-    first_ptr: *mut T,
-    first_len: usize,
-    second_ptr: *mut T,
-    second_len: usize,
+    first_slice: &'a mut [MaybeUninit<T>],
+    second_slice: &'a mut [MaybeUninit<T>],
     producer: &'a Producer<T>,
 }
 
 // WriteChunkUninit only exists while a unique reference to the Producer is held.
 // It is therefore safe to move it to another thread.
 unsafe impl<T: Send> Send for WriteChunkUninit<'_, T> {}
+
+impl<T> PartialEq for WriteChunkUninit<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T> Eq for WriteChunkUninit<'_, T> {}
 
 impl<T> WriteChunkUninit<'_, T> {
     /// Returns two slices for writing to the requested slots.
@@ -465,12 +484,7 @@ impl<T> WriteChunkUninit<'_, T> {
     /// they will *not* become available for reading and
     /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [MaybeUninit<T>], &mut [MaybeUninit<T>]) {
-        unsafe {
-            (
-                core::slice::from_raw_parts_mut(self.first_ptr as *mut _, self.first_len),
-                core::slice::from_raw_parts_mut(self.second_ptr as *mut _, self.second_len),
-            )
-        }
+        (self.first_slice, self.second_slice)
     }
 
     /// Makes the first `n` slots of the chunk available for reading.
@@ -499,8 +513,8 @@ impl<T> WriteChunkUninit<'_, T> {
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
-        let tail = p.buffer.increment(p.cached_tail.get(), n);
-        p.buffer.tail.store(tail, Ordering::Release);
+        let tail = p.buffer().increment(p.cached_tail.get(), n);
+        p.buffer().tail.store(tail, Ordering::Release);
         p.cached_tail.set(tail);
         n
     }
@@ -558,9 +572,17 @@ impl<T> WriteChunkUninit<'_, T> {
     {
         let mut iter = iter.into_iter();
         let mut iterated = 0;
+        // NB: Iterating over slices (instead of using pointers)
+        //     led to worse optimization (with rustc 1.57).
         'outer: for &(ptr, len) in &[
-            (self.first_ptr, self.first_len),
-            (self.second_ptr, self.second_len),
+            (
+                self.first_slice.as_mut_ptr().cast::<T>(),
+                self.first_slice.len(),
+            ),
+            (
+                self.second_slice.as_mut_ptr().cast::<T>(),
+                self.second_slice.len(),
+            ),
         ] {
             for i in 0..len {
                 match iter.next() {
@@ -582,13 +604,13 @@ impl<T> WriteChunkUninit<'_, T> {
     /// Returns the number of slots in the chunk.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.first_len + self.second_len
+        self.first_slice.len() + self.second_slice.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.first_len == 0
+        self.first_slice.len() == 0
     }
 
     /// Drops all elements starting from index `n`.
@@ -596,11 +618,17 @@ impl<T> WriteChunkUninit<'_, T> {
     /// All of those slots must be initialized.
     unsafe fn drop_suffix(&mut self, n: usize) {
         // NB: If n >= self.len(), the loops are not entered.
-        for i in n..self.first_len {
-            self.first_ptr.add(i).drop_in_place();
+        for i in n..self.first_slice.len() {
+            self.first_slice
+                .get_unchecked_mut(i)
+                .as_mut_ptr()
+                .drop_in_place();
         }
-        for i in n.saturating_sub(self.first_len)..self.second_len {
-            self.second_ptr.add(i).drop_in_place();
+        for i in n.saturating_sub(self.first_slice.len())..self.second_slice.len() {
+            self.second_slice
+                .get_unchecked_mut(i)
+                .as_mut_ptr()
+                .drop_in_place();
         }
     }
 }
@@ -608,20 +636,26 @@ impl<T> WriteChunkUninit<'_, T> {
 /// Structure for reading from multiple slots in one go.
 ///
 /// This is returned from [`Consumer::read_chunk()`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ReadChunk<'a, T> {
-    // Must be "mut" for drop_in_place()
-    first_ptr: *mut T,
-    first_len: usize,
-    // Must be "mut" for drop_in_place()
-    second_ptr: *mut T,
-    second_len: usize,
+    // Must be mutable for drop_in_place()
+    first_slice: &'a mut [MaybeUninit<T>],
+    // Must be mutable for drop_in_place()
+    second_slice: &'a mut [MaybeUninit<T>],
     consumer: &'a Consumer<T>,
 }
 
 // ReadChunk only exists while a unique reference to the Consumer is held.
 // It is therefore safe to move it to another thread.
 unsafe impl<T: Send> Send for ReadChunk<'_, T> {}
+
+impl<T> PartialEq for ReadChunk<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
+}
+
+impl<T> Eq for ReadChunk<'_, T> {}
 
 impl<T> ReadChunk<'_, T> {
     /// Returns two slices for reading from the requested slots.
@@ -637,10 +671,13 @@ impl<T> ReadChunk<'_, T> {
     /// You can "peek" at the contained values by simply not calling any of the "commit" methods.
     #[must_use]
     pub fn as_slices(&self) -> (&[T], &[T]) {
-        (
-            unsafe { core::slice::from_raw_parts(self.first_ptr, self.first_len) },
-            unsafe { core::slice::from_raw_parts(self.second_ptr, self.second_len) },
-        )
+        // SAFETY: All slots are initialized.
+        unsafe {
+            (
+                &*(self.first_slice as *const [_] as *const [T]),
+                &*(self.second_slice as *const [_] as *const [T]),
+            )
+        }
     }
 
     /// Drops the first `n` slots of the chunk, making the space available for writing again.
@@ -707,17 +744,16 @@ impl<T> ReadChunk<'_, T> {
     }
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
-        let first_len = self.first_len.min(n);
-        for i in 0..first_len {
-            self.first_ptr.add(i).drop_in_place();
-        }
-        let second_len = self.second_len.min(n - first_len);
-        for i in 0..second_len {
-            self.second_ptr.add(i).drop_in_place();
-        }
+        self.first_slice
+            .iter_mut()
+            .chain(self.second_slice.iter_mut())
+            .take(n)
+            .for_each(|slot| {
+                slot.as_mut_ptr().drop_in_place();
+            });
         let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
-        c.buffer.head.store(head, Ordering::Release);
+        let head = c.buffer().increment(c.cached_head.get(), n);
+        c.buffer().head.store(head, Ordering::Release);
         c.cached_head.set(head);
         n
     }
@@ -725,13 +761,13 @@ impl<T> ReadChunk<'_, T> {
     /// Returns the number of slots in the chunk.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.first_len + self.second_len
+        self.first_slice.len() + self.second_slice.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.first_len == 0
+        self.first_slice.len() == 0
     }
 }
 
@@ -770,8 +806,8 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
         let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
-        c.buffer.head.store(head, Ordering::Release);
+        let head = c.buffer().increment(c.cached_head.get(), self.iterated);
+        c.buffer().head.store(head, Ordering::Release);
         c.cached_head.set(head);
     }
 }
@@ -780,24 +816,24 @@ impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = if self.iterated < self.chunk.first_len {
-            unsafe { self.chunk.first_ptr.add(self.iterated) }
-        } else if self.iterated < self.chunk.first_len + self.chunk.second_len {
-            unsafe {
+        self.chunk
+            .first_slice
+            .get(self.iterated)
+            .or_else(|| {
                 self.chunk
-                    .second_ptr
-                    .add(self.iterated - self.chunk.first_len)
-            }
-        } else {
-            return None;
-        };
-        self.iterated += 1;
-        Some(unsafe { ptr.read() })
+                    .second_slice
+                    .get(self.iterated - self.chunk.first_slice.len())
+            })
+            .map(|slot| unsafe { slot.as_ptr().read() })
+            .map(|item| {
+                self.iterated += 1;
+                item
+            })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
-        (remaining, Some(remaining))
+        let size = self.chunk.first_slice.len() + self.chunk.second_slice.len() - self.iterated;
+        (size, Some(size))
     }
 }
 
