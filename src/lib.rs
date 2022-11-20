@@ -708,7 +708,7 @@ impl<T> Consumer<T> {
 /// ```
 pub trait CopyToUninit<T: Copy> {
     /// Copies contents to a possibly uninitialized slice.
-    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) -> &mut [T];
+    fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T];
 }
 
 impl<T: Copy> CopyToUninit<T> for [T] {
@@ -717,7 +717,7 @@ impl<T: Copy> CopyToUninit<T> for [T] {
     /// # Panics
     ///
     /// This function will panic if the two slices have different lengths.
-    fn copy_to_uninit(&self, dst: &mut [MaybeUninit<T>]) -> &mut [T] {
+    fn copy_to_uninit<'a>(&self, dst: &'a mut [MaybeUninit<T>]) -> &'a mut [T] {
         assert_eq!(
             self.len(),
             dst.len(),
