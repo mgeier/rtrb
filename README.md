@@ -109,6 +109,7 @@ to wait-free SPSC implementations:
 * [magnetic](https://crates.io/crates/magnetic) (see `magnetic::spsc` module)
 * [npnc](https://crates.io/crates/npnc) (see `npnc::bounded::spsc` module)
 * [ringbuf](https://crates.io/crates/ringbuf)
+* [ringbuffer-spsc](https://crates.io/crates/ringbuffer-spsc) (using const generics)
 * [shmem-ipc](https://crates.io/crates/shmem-ipc) (see `shmem_ipc::sharedring` and `shmem_ipc::ringbuf` modules)
 
 There are also implementations in other languages:
