@@ -798,6 +798,7 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
 impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
     type Item = T;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let ptr = if self.iterated < self.chunk.first_len {
             unsafe { self.chunk.first_ptr.add(self.iterated) }
@@ -814,6 +815,7 @@ impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
         Some(unsafe { ptr.read() })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
         (remaining, Some(remaining))
