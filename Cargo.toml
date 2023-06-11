@@ -22,7 +22,7 @@ default = ["std"]
 std = []
 
 [dependencies]
-cache-padded = "1.1"
+cache-padded = "1.2.*"
 
 [dev-dependencies]
 rand = "0.8"
