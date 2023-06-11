@@ -12,6 +12,7 @@ categories = ["concurrency", "data-structures", "no-std"]
 keywords = ["lock-free", "wait-free", "spsc", "queue"]
 license = "MIT OR Apache-2.0"
 edition = "2018"
+rust-version = "1.38"
 
 exclude = [
     ".*",
