@@ -22,7 +22,8 @@ default = ["std"]
 std = []
 
 [dependencies]
-cache-padded = "1.1"
+# "std" is enabled by default
+crossbeam-utils = { version = "0.8", default-features = false }
 
 [dev-dependencies]
 rand = "0.8"
