@@ -95,8 +95,9 @@ jobs:
         with:
           toolchain: stable
       - name: Install cargo-nono
+        # --locked is recommended, see https://github.com/hobofan/cargo-nono/pull/68
         run: |
-          cargo install cargo-nono
+          cargo install cargo-nono --locked
       - name: Check no_std compatibility
         run: |
           cargo nono check
