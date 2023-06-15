@@ -69,6 +69,41 @@ fn zero_capacity() {
 }
 
 #[test]
+fn single_capacity() {
+    let (mut p, mut c) = RingBuffer::<i32>::new(1);
+
+    if let Ok(mut chunk) = p.write_chunk(1) {
+        assert_eq!(chunk.len(), 1);
+        assert!(!chunk.is_empty());
+        let (first, second) = chunk.as_mut_slices();
+        first[0] = 2;
+        assert!(second.is_empty());
+        chunk.commit_all();
+    } else {
+        unreachable!();
+    }
+
+    if let Ok(mut chunk) = c.read_chunk(1) {
+        assert_eq!(chunk.len(), 1);
+        assert!(!chunk.is_empty());
+        {
+            let (first, second) = chunk.as_mut_slices();
+            assert_eq!(first[0], 2);
+            first[0] *= 2;
+            assert!(second.is_empty());
+        }
+        {
+            let (first, second) = chunk.as_slices();
+            assert_eq!(first[0], 4);
+            assert!(second.is_empty());
+        }
+        chunk.commit_all();
+    } else {
+        unreachable!();
+    }
+}
+
+#[test]
 fn drop_write_chunk() {
     // Static variable to count all drop() invocations
     static mut DROP_COUNT: i32 = 0;
