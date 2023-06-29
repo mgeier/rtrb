@@ -324,6 +324,17 @@ impl<T> Producer<T> {
         }
     }
 
+    /// Force pushes an element, even if queue is full
+    pub fn force_push(&mut self, value: T) {
+        let tail = self.force_next_tail();
+        unsafe {
+            self.buffer.slot_ptr(tail).write(value);
+        }
+        let tail = self.buffer.increment1(tail);
+        self.buffer.tail.store(tail, Ordering::Release);
+        self.cached_tail.set(tail);
+    }
+
     /// Returns the number of slots available for writing.
     ///
     /// Since items can be concurrently consumed on another thread, the actual number
@@ -454,6 +465,11 @@ impl<T> Producer<T> {
             }
         }
         Some(tail)
+    }
+
+    fn force_next_tail(&self) -> usize {
+        let tail = self.cached_tail.get();
+        tail
     }
 }
 

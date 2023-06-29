@@ -154,3 +154,21 @@ fn no_race_with_is_abandoned() {
     }
     t.join().unwrap();
 }
+
+#[test]
+fn simple_force_push() {
+    let (mut p, mut c) = RingBuffer::<u8>::new(1);
+    p.force_push(1);
+    p.force_push(2);
+    p.force_push(3);
+    assert_eq!(c.pop(), Ok(3));
+}
+
+#[test]
+fn force_push() {
+    let (mut p, mut c) = RingBuffer::<u8>::new(2);
+    p.force_push(1);
+    p.force_push(2);
+    p.force_push(3);
+    assert_eq!(c.pop(), Ok(3));
+}
