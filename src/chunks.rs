@@ -653,7 +653,7 @@ impl<T> ReadChunk<'_, T> {
     /// reading data and the immutable version should be preferred. However,
     /// there are some scenarios where it might be desirable to perform
     /// operations on the data in-place without copying it to a separate buffer
-    /// (ie. streaming decryption), in which case this version can be used.
+    /// (e.g. streaming decryption), in which case this version can be used.
     #[must_use]
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         (
