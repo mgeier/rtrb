@@ -643,6 +643,25 @@ impl<T> ReadChunk<'_, T> {
         )
     }
 
+    /// Returns two mutable slices for reading from the requested slots.
+    ///
+    /// This has the same semantics as [`as_slices()`](ReadChunk::as_slices),
+    /// except that it returns mutable slices and requires a mutable reference
+    /// to the chunk.
+    ///
+    /// In the vast majority of cases, mutable access is not required when
+    /// reading data and the immutable version should be preferred. However,
+    /// there are some scenarios where it might be desirable to perform
+    /// operations on the data in-place without copying it to a separate buffer
+    /// (e.g. streaming decryption), in which case this version can be used.
+    #[must_use]
+    pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
+        (
+            unsafe { core::slice::from_raw_parts_mut(self.first_ptr, self.first_len) },
+            unsafe { core::slice::from_raw_parts_mut(self.second_ptr, self.second_len) },
+        )
+    }
+
     /// Drops the first `n` slots of the chunk, making the space available for writing again.
     ///
     /// # Panics
