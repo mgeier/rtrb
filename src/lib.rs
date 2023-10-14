@@ -47,6 +47,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(rust_2018_idioms)]
 #![deny(missing_docs, missing_debug_implementations)]
+#![deny(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::undocumented_unsafe_blocks, clippy::unnecessary_safety_comment)]
 
 extern crate alloc;
 
@@ -169,7 +171,9 @@ impl<T> RingBuffer<T> {
     /// If `pos == 0 && capacity == 0`, the returned pointer must not be dereferenced!
     unsafe fn slot_ptr(&self, pos: usize) -> *mut T {
         debug_assert!(pos == 0 || pos < 2 * self.capacity);
-        self.data_ptr.add(self.collapse_position(pos))
+        let pos = self.collapse_position(pos);
+        // SAFETY: The caller must ensure a valid pos.
+        unsafe { self.data_ptr.add(pos) }
     }
 
     /// Increments a position by going `n` slots forward.
@@ -217,16 +221,14 @@ impl<T> Drop for RingBuffer<T> {
 
         // Loop over all slots that hold a value and drop them.
         while head != tail {
-            unsafe {
-                self.slot_ptr(head).drop_in_place();
-            }
+            // SAFETY: All slots between head and tail have been initialized.
+            unsafe { self.slot_ptr(head).drop_in_place() };
             head = self.increment1(head);
         }
 
         // Finally, deallocate the buffer, but don't run any destructors.
-        unsafe {
-            Vec::from_raw_parts(self.data_ptr, 0, self.capacity);
-        }
+        // SAFETY: data_ptr and capacity are still valid from the original initialization.
+        unsafe { Vec::from_raw_parts(self.data_ptr, 0, self.capacity) };
     }
 }
 
@@ -283,6 +285,8 @@ pub struct Producer<T> {
     cached_head: Cell<usize>,
 }
 
+// SAFETY: After moving a Producer to another thread, there is still only a single thread
+// that can access the producer side of the queue.
 unsafe impl<T: Send> Send for Producer<T> {}
 
 impl<T> Producer<T> {
@@ -307,9 +311,8 @@ impl<T> Producer<T> {
     /// ```
     pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
-            unsafe {
-                self.buffer.slot_ptr(tail).write(value);
-            }
+            // SAFETY: tail points to an empty slot.
+            unsafe { self.buffer.slot_ptr(tail).write(value) };
             let tail = self.buffer.increment1(tail);
             self.buffer.tail.store(tail, Ordering::Release);
             Ok(())
@@ -485,6 +488,8 @@ pub struct Consumer<T> {
     cached_tail: Cell<usize>,
 }
 
+// SAFETY: After moving a Consumer to another thread, there is still only a single thread
+// that can access the consumer side of the queue.
 unsafe impl<T: Send> Send for Consumer<T> {}
 
 impl<T> Consumer<T> {
@@ -519,6 +524,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn pop(&mut self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
+            // SAFETY: head points to an initialized slot.
             let value = unsafe { self.buffer.slot_ptr(head).read() };
             let head = self.buffer.increment1(head);
             self.buffer.head.store(head, Ordering::Release);
@@ -548,6 +554,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
+            // SAFETY: head points to an initialized slot.
             Ok(unsafe { &*self.buffer.slot_ptr(head) })
         } else {
             Err(PeekError::Empty)
@@ -718,6 +725,8 @@ impl<T: Copy> CopyToUninit<T> for [T] {
             "source slice length does not match destination slice length"
         );
         let dst_ptr = dst.as_mut_ptr().cast();
+        // SAFETY: The lengths have been checked to be equal and
+        // the mutable reference makes sure that there is no overlap.
         unsafe {
             self.as_ptr().copy_to_nonoverlapping(dst_ptr, self.len());
             core::slice::from_raw_parts_mut(dst_ptr, self.len())
