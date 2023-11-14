@@ -30,6 +30,9 @@ crossbeam-utils = { version = "0.8", default-features = false }
 rand = "0.8"
 criterion = "0.3"
 
+[profile.bench]
+codegen-units = 1
+
 [lib]
 bench = false # Don't disturb criterion command line parsing
 
