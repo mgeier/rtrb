@@ -30,6 +30,18 @@ and for instructions how to upgrade between released versions,
 have a look at the [changelog](https://github.com/mgeier/rtrb/releases).
 
 
+Performance
+-----------
+
+Measuring the performance of a data structure for inter-thread communication
+can be quite brittle and the results depend on many factors.
+A few performance comparisons between competing crates are shown in
+[issue #39](https://github.com/mgeier/rtrb/issues/39),
+but like all benchmarks, they are deeply flawed and to be taken with a grain of salt.
+You should make your own measurements that are relevant to your usage patterns.
+Feel free to share your own results by commenting on that issue.
+
+
 Development
 -----------
 
