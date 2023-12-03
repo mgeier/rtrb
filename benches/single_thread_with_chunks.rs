@@ -36,24 +36,6 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     let (mut p, mut c) = RingBuffer::<u8>::new(CHUNK_SIZE + 1);
 
-    add_function(&mut group, "1-pop", |data| {
-        let mut result = [0; CHUNK_SIZE];
-        let _ = p.write(data).unwrap();
-        for i in result.iter_mut() {
-            *i = c.pop().unwrap();
-        }
-        result
-    });
-
-    add_function(&mut group, "1-push", |data| {
-        let mut result = [0; CHUNK_SIZE];
-        for &i in data.iter() {
-            p.push(i).unwrap();
-        }
-        let _ = c.read(&mut result).unwrap();
-        result
-    });
-
     add_function(&mut group, "2-slice-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let _ = p.write(data).unwrap();
