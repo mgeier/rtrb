@@ -45,6 +45,10 @@ Feel free to share your own results by commenting on that issue.
 Development
 -----------
 
+Creating the HTML docs (which will be available in `target/doc/rtrb/index.html`):
+
+    cargo doc
+
 Running the tests:
 
     cargo test
@@ -58,9 +62,18 @@ results will be available in `target/criterion/report/index.html`):
 
     cargo bench
 
-Creating the HTML docs (which will be available in `target/doc/rtrb/index.html`):
+Creating [flame graphs](https://github.com/flamegraph-rs/flamegraph) for the benchmarks;
+first a few preparations:
 
-    cargo doc
+    cargo install flamegraph
+    echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid
+    export CARGO_PROFILE_BENCH_DEBUG=true
+
+Then, creating the flame graph (which will be saved to `flamegraph.svg`),
+providing a benchmark (e.g. `two_threads`), a desired runtime and optionally
+a benchmark function (e.g. `large`):
+
+    cargo flamegraph --bench two_threads -- --bench --profile-time 10 large
 
 To measure code coverage, nightly Rust is required, as well as a few additional dependencies:
 
