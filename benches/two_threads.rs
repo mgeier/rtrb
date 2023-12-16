@@ -73,7 +73,9 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
                 std::thread::spawn(move || {
                     barrier.wait();
                     for _ in 0..iters {
-                        while !push(&mut p, black_box(42)) {}
+                        while !push(&mut p, black_box(42)) {
+                            std::hint::spin_loop();
+                        }
                     }
                     barrier.wait();
                 })
@@ -81,7 +83,9 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
             barrier.wait();
             let start = std::time::Instant::now();
             for _ in 0..iters {
-                while pop(&mut c).is_none() {}
+                while pop(&mut c).is_none() {
+                    std::hint::spin_loop();
+                }
             }
             barrier.wait();
             let duration = start.elapsed();
