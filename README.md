@@ -128,7 +128,7 @@ If you don't like this crate, no problem, there are several alternatives for you
 There are many varieties of ring buffers available, here we limit the selection
 to wait-free SPSC implementations:
 
-* [fixed-queue](https://crates.io/crates/fixed-queue) (using const generics, see `fixed_queue::spsc`)
+* [ach-spsc](https://crates.io/crates/ach-spsc) (using const generics)
 * [heapless](https://crates.io/crates/heapless) (for embedded systems, see `heapless::spsc`)
 * [jack](https://crates.io/crates/jack) (FFI bindings for JACK, see `jack::Ringbuffer`)
 * [magnetic](https://crates.io/crates/magnetic) (see `magnetic::spsc` module)
