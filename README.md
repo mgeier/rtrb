@@ -161,6 +161,9 @@ Licensed under either of
 
 at your option.
 
+Note that this crate contains a copy of the file `cache_padded.rs` from
+https://github.com/crossbeam-rs/crossbeam.
+
 #### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
