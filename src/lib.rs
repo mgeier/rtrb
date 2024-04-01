@@ -58,7 +58,9 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crossbeam_utils::CachePadded;
+#[allow(dead_code)]
+mod cache_padded;
+use cache_padded::CachePadded;
 
 pub mod chunks;
 
