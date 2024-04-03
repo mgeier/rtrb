@@ -60,7 +60,7 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::undocumented_unsafe_blocks)]
 mod cache_padded;
 use cache_padded::CachePadded;
 
