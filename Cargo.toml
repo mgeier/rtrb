@@ -30,6 +30,7 @@ crossbeam-utils = { version = "0.8", default-features = false }
 
 # aggressive optimization for benchmarks
 [profile.bench]
+lto = true
 opt-level = 3
 codegen-units = 1
 
