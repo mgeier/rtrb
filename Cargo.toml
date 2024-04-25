@@ -28,7 +28,9 @@ criterion = "0.3"
 # TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
 crossbeam-utils = { version = "0.8", default-features = false }
 
+# aggressive optimization for benchmarks
 [profile.bench]
+opt-level = 3
 codegen-units = 1
 
 [lib]
