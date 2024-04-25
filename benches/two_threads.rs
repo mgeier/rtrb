@@ -37,29 +37,68 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
         b.iter_custom(|iters| {
             // Queue is so long that there is no contention between threads.
             let (mut p, mut c) = create((2 * iters).try_into().unwrap());
-            for _ in 0..iters {
-                push(&mut p, 42);
+            for i in 0..iters {
+                push(&mut p, i as u8);
             }
             let barrier = Arc::new(Barrier::new(2));
             let push_thread = {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
-                    for _ in 0..iters {
-                        push(&mut p, black_box(42));
+                    let start_pushing = std::time::Instant::now();
+                    for i in 0..iters {
+                        // NB: This conversion truncates:
+                        push(&mut p, i as u8);
                     }
-                    barrier.wait();
+                    let stop_pushing = std::time::Instant::now();
+                    (start_pushing, stop_pushing)
                 })
             };
             barrier.wait();
-            let start = std::time::Instant::now();
+            let start_popping = std::time::Instant::now();
             for _ in 0..iters {
                 black_box(pop(&mut c));
             }
-            barrier.wait();
-            let duration = start.elapsed();
-            push_thread.join().unwrap();
-            duration
+            let stop_popping = std::time::Instant::now();
+            let (start_pushing, stop_pushing) = push_thread.join().unwrap();
+            let total = stop_pushing
+                .max(stop_popping)
+                .duration_since(start_pushing.min(start_popping));
+
+            /*
+            if start_pushing < start_popping {
+                println!(
+                    "popping started {:?} after pushing",
+                    start_popping.duration_since(start_pushing)
+                );
+            } else {
+                println!(
+                    "pushing started {:?} after popping",
+                    start_pushing.duration_since(start_popping)
+                );
+            }
+            */
+
+            // The goal is that both threads are finished at around the same time.
+            // This can be checked with the following output.
+            /*
+            if stop_pushing < stop_popping {
+                let diff = stop_popping.duration_since(stop_pushing);
+                println!(
+                    "popping stopped {diff:?} after pushing ({:.1}% of total time)",
+                    (diff.as_secs_f64() / total.as_secs_f64()) * 100.0
+                );
+            } else {
+                let diff = stop_pushing.duration_since(stop_popping);
+                println!(
+                    "pushing stopped {diff:?} after popping ({:.1}% of total time)",
+                    (diff.as_secs_f64() / total.as_secs_f64()) * 100.0
+                );
+            }
+            */
+
+            #[allow(clippy::let_and_return)]
+            total
         });
     });
 
@@ -72,25 +111,28 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
-                    for _ in 0..iters {
-                        while !push(&mut p, black_box(42)) {
+                    let start = std::time::Instant::now();
+                    for i in 0..iters {
+                        while !push(&mut p, i as u8) {
                             std::hint::spin_loop();
                         }
                     }
-                    barrier.wait();
+                    start
                 })
             };
             barrier.wait();
-            let start = std::time::Instant::now();
-            for _ in 0..iters {
-                while pop(&mut c).is_none() {
+            for i in 0..iters {
+                loop {
+                    if let Some(x) = pop(&mut c) {
+                        assert_eq!(x, i as u8);
+                        break;
+                    }
                     std::hint::spin_loop();
                 }
             }
-            barrier.wait();
-            let duration = start.elapsed();
-            push_thread.join().unwrap();
-            duration
+            let stop = std::time::Instant::now();
+            let start = push_thread.join().unwrap();
+            stop.duration_since(start)
         });
     });
 }
