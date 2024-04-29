@@ -1,25 +1,24 @@
+macro_rules! create_two_threads_benchmark {
+    ($($id:literal, $create:expr, $push:expr, $pop:expr);+) => {
+
 use std::convert::TryInto as _;
 use std::sync::{Arc, Barrier};
 
 use criterion::{black_box, criterion_group, criterion_main};
-use criterion::{AxisScale, PlotConfiguration};
 
-use rtrb::RingBuffer;
-
-pub fn add_function<P, C, Create, Push, Pop, M>(
-    group: &mut criterion::BenchmarkGroup<M>,
-    id: &str,
-    create: Create,
-    push: Push,
-    pop: Pop,
-) where
-    P: Send + 'static,
-    C: Send + 'static,
+fn help_with_type_inference<P, C, Create, Push, Pop>(create: Create, push: Push, pop: Pop) -> (Create, Push, Pop)
+where
     Create: Fn(usize) -> (P, C),
-    Push: Fn(&mut P, u8) -> bool + Send + Copy + 'static,
-    Pop: Fn(&mut C) -> Option<u8> + Send + 'static,
-    M: criterion::measurement::Measurement<Value = std::time::Duration>,
+    Push: Fn(&mut P, u8) -> bool,
+    Pop: Fn(&mut C) -> Option<u8>,
 {
+    (create, push, pop)
+}
+
+#[allow(unused)]
+fn criterion_benchmark(criterion: &mut criterion::Criterion) {
+$(
+    let (create, push, pop) = help_with_type_inference($create, $push, $pop);
     // Just a quick check if the ring buffer works as expected:
     let (mut p, mut c) = create(2);
     assert!(pop(&mut c).is_none());
@@ -29,12 +28,14 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
     assert_eq!(pop(&mut c).unwrap(), 1);
     assert_eq!(pop(&mut c).unwrap(), 2);
     assert!(pop(&mut c).is_none());
+)+
 
-    group.throughput(criterion::Throughput::Bytes(1));
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-
-    group.bench_function(["large", id].concat(), |b| {
+    let mut group_large = criterion.benchmark_group("two-threads-large");
+    group_large.throughput(criterion::Throughput::Bytes(1));
+$(
+    group_large.bench_function($id, |b| {
         b.iter_custom(|iters| {
+            let (create, push, pop) = help_with_type_inference($create, $push, $pop);
             // Queue is so long that there is no contention between threads.
             let (mut p, mut c) = create((2 * iters).try_into().unwrap());
             for i in 0..iters {
@@ -101,9 +102,15 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
             total
         });
     });
+)+
+    group_large.finish();
 
-    group.bench_function(["small", id].concat(), |b| {
+    let mut group_small = criterion.benchmark_group("two-threads-small");
+    group_small.throughput(criterion::Throughput::Bytes(1));
+$(
+    group_small.bench_function($id, |b| {
         b.iter_custom(|iters| {
+            let (create, push, pop) = help_with_type_inference($create, $push, $pop);
             // Queue is very short in order to force a lot of contention between threads.
             let (mut p, mut c) = create(2);
             let barrier = Arc::new(Barrier::new(2));
@@ -135,19 +142,19 @@ pub fn add_function<P, C, Create, Push, Pop, M>(
             stop.duration_since(start)
         });
     });
-}
-
-fn criterion_benchmark(criterion: &mut criterion::Criterion) {
-    let mut group = criterion.benchmark_group("two-threads");
-    add_function(
-        &mut group,
-        "",
-        RingBuffer::new,
-        |p, i| p.push(i).is_ok(),
-        |c| c.pop().ok(),
-    );
-    group.finish();
+)+
+    group_small.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
+
+    };
+}
+
+create_two_threads_benchmark!(
+    "rtrb",
+    rtrb::RingBuffer::new,
+    |p, i| p.push(i).is_ok(),
+    |c| c.pop().ok()
+);
