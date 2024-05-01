@@ -41,7 +41,7 @@ $(
             for i in 0..iters {
                 push(&mut p, i as u8);
             }
-            let barrier = Arc::new(Barrier::new(2));
+            let barrier = Arc::new(Barrier::new(3));
             let push_thread = {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
@@ -55,6 +55,17 @@ $(
                     (start_pushing, stop_pushing)
                 })
             };
+            let trigger_thread = {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    // Try to force other threads to go to sleep on barrier.
+                    std::thread::yield_now();
+                    std::thread::yield_now();
+                    std::thread::yield_now();
+                    barrier.wait();
+                    // Hopefully, the other two threads now wake up at the same time.
+                })
+            };
             barrier.wait();
             let start_popping = std::time::Instant::now();
             for _ in 0..iters {
@@ -62,6 +73,7 @@ $(
             }
             let stop_popping = std::time::Instant::now();
             let (start_pushing, stop_pushing) = push_thread.join().unwrap();
+            trigger_thread.join().unwrap();
             let total = stop_pushing
                 .max(stop_popping)
                 .duration_since(start_pushing.min(start_popping));
