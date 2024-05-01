@@ -389,6 +389,10 @@ impl<T> Producer<T> {
 
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
     ///
+    /// Note that since Rust version 1.74.0, this is not synchronizing with the consumer thread
+    /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
+    /// In a future version of `rtrb`, the synchronizing behavior might be restored.
+    ///
     /// # Examples
     ///
     /// ```
@@ -628,6 +632,10 @@ impl<T> Consumer<T> {
     }
 
     /// Returns `true` if the corresponding [`Producer`] has been destroyed.
+    ///
+    /// Note that since Rust version 1.74.0, this is not synchronizing with the producer thread
+    /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
+    /// In a future version of `rtrb`, the synchronizing behavior might be restored.
     ///
     /// # Examples
     ///
