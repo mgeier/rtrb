@@ -113,11 +113,9 @@ $(
             let (create, push, pop) = help_with_type_inference($create, $push, $pop);
             // Queue is very short in order to force a lot of contention between threads.
             let (mut p, mut c) = create(2);
-            let barrier = Arc::new(Barrier::new(2));
             let push_thread = {
-                let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
-                    barrier.wait();
+                    // The timing starts once both threads are ready.
                     let start = std::time::Instant::now();
                     for i in 0..iters {
                         while !push(&mut p, i as u8) {
@@ -127,7 +125,7 @@ $(
                     start
                 })
             };
-            barrier.wait();
+            // While the second thread is still starting up, this thread will busy-wait.
             for i in 0..iters {
                 loop {
                     if let Some(x) = pop(&mut c) {
@@ -137,6 +135,7 @@ $(
                     std::hint::spin_loop();
                 }
             }
+            // The timing stops once all items have been received.
             let stop = std::time::Instant::now();
             let start = push_thread.join().unwrap();
             stop.duration_since(start)
