@@ -426,6 +426,8 @@ impl<T> Producer<T> {
     /// # use rtrb::RingBuffer;
     /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if p.is_abandoned() {
+    ///     // This is needed since Rust 1.74.0, see https://github.com/mgeier/rtrb/issues/114:
+    ///     std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
     ///     // The consumer does definitely not exist anymore.
     /// }
     /// ```
@@ -669,6 +671,8 @@ impl<T> Consumer<T> {
     /// # use rtrb::RingBuffer;
     /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if c.is_abandoned() {
+    ///     // This is needed since Rust 1.74.0, see https://github.com/mgeier/rtrb/issues/114:
+    ///     std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
     ///     // The producer does definitely not exist anymore.
     /// }
     /// ```
