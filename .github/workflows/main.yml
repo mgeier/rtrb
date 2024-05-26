@@ -139,5 +139,8 @@ jobs:
       - name: Run ThreadSanitizer
         env:
           RUSTFLAGS: "-Z sanitizer=thread"
+        # "no_race_with_is_abandoned" is skipped because ThreadSanitizer
+        # reports false positives when using standalone fences,
+        # see https://github.com/google/sanitizers/issues/1415.
         run: |
-          cargo test --tests -Z build-std --target x86_64-unknown-linux-gnu
+          cargo test --tests -Z build-std --target x86_64-unknown-linux-gnu -- --skip no_race_with_is_abandoned

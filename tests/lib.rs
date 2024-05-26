@@ -151,6 +151,7 @@ fn no_race_with_is_abandoned() {
         });
         std::thread::yield_now();
         if c.is_abandoned() {
+            std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
             unsafe { V = 20 };
         }
         t.join().unwrap();
