@@ -141,14 +141,18 @@ fn trait_impls() {
 #[test]
 fn no_race_with_is_abandoned() {
     static mut V: u32 = 0;
-    let (p, c) = RingBuffer::<u8>::new(7);
-    let t = std::thread::spawn(move || {
-        unsafe { V = 10 };
-        drop(p);
-    });
-    std::thread::yield_now();
-    if c.is_abandoned() {
-        unsafe { V = 20 };
+    // NB: We give Miri multiple chances to find probabilistic bugs,
+    //     see https://github.com/rust-lang/rust/issues/117485:
+    for _ in 0..5 {
+        let (p, c) = RingBuffer::<u8>::new(7);
+        let t = std::thread::spawn(move || {
+            unsafe { V = 10 };
+            drop(p);
+        });
+        std::thread::yield_now();
+        if c.is_abandoned() {
+            unsafe { V = 20 };
+        }
+        t.join().unwrap();
     }
-    t.join().unwrap();
 }
