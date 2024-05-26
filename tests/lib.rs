@@ -146,11 +146,9 @@ fn no_race_with_is_abandoned() {
         unsafe { V = 10 };
         drop(p);
     });
+    std::thread::yield_now();
     if c.is_abandoned() {
         unsafe { V = 20 };
-    } else {
-        // This is not synchronized, both Miri and ThreadSanitizer should detect a data race:
-        //unsafe { V = 30 };
     }
     t.join().unwrap();
 }
