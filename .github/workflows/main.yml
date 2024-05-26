@@ -117,6 +117,12 @@ jobs:
       - name: Run Miri
         run: |
           cargo miri test
+      - name: Run Miri again (with miri-preemption-rate=0)
+        env:
+          MIRIFLAGS: "-Zmiri-preemption-rate=0" 
+        # For now, this is only run on one test, see https://github.com/mgeier/rtrb/issues/114
+        run: |
+          cargo miri test no_race_with_is_abandoned
 
   thread-sanitizer:
     runs-on: ubuntu-latest

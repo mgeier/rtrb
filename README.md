@@ -93,6 +93,10 @@ Testing with Miri also needs nightly Rust:
 
     cargo +nightly miri test
 
+This Miri flag should also be tried:
+
+    MIRIFLAGS="-Zmiri-preemption-rate=0" cargo +nightly miri test
+
 Running the tests with ThreadSanitizer requires nightly Rust as well:
 
     RUSTFLAGS="-Z sanitizer=thread" cargo +nightly test --tests -Z build-std --target x86_64-unknown-linux-gnu
