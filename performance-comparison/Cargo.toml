@@ -9,7 +9,6 @@ publish = false
 concurrent-queue = "2.3"
 crossbeam-queue = "0.3"
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
-magnetic = "2"
 npnc = "0.2"
 omango = "0.2"
 ringbuf = "0.4"

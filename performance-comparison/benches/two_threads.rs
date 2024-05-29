@@ -2,9 +2,6 @@
 #[macro_use]
 mod two_threads;
 
-use magnetic::Consumer as _;
-use magnetic::Producer as _;
-
 use ringbuf::traits::Consumer as _;
 use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
@@ -36,15 +33,7 @@ create_two_threads_benchmark!(
     |p, i| p.try_push(i).is_ok(),
     |c| c.try_pop();
 
-    "6-magnetic",
-    |capacity| {
-        let buffer = magnetic::buffer::dynamic::DynamicBuffer::new(capacity).unwrap();
-        magnetic::spsc::spsc_queue(buffer)
-    },
-    |p, i| p.try_push(i).is_ok(),
-    |c| c.try_pop().ok();
-
-    "7-concurrent-queue",
+    "6-concurrent-queue",
     |capacity| {
         let q = std::sync::Arc::new(concurrent_queue::ConcurrentQueue::bounded(capacity));
         (q.clone(), q)
@@ -52,7 +41,7 @@ create_two_threads_benchmark!(
     |q, i| q.push(i).is_ok(),
     |q| q.pop().ok();
 
-    "8-crossbeam-queue",
+    "7-crossbeam-queue",
     |capacity| {
         let q = std::sync::Arc::new(crossbeam_queue::ArrayQueue::new(capacity));
         (q.clone(), q)
