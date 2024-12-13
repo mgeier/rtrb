@@ -793,7 +793,7 @@ pub struct ReadChunkIntoIter<'a, T> {
     iterated: usize,
 }
 
-impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
+impl<T> Drop for ReadChunkIntoIter<'_, T> {
     /// Makes all iterated slots available for writing again.
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
@@ -806,7 +806,7 @@ impl<'a, T> Drop for ReadChunkIntoIter<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
+impl<T> Iterator for ReadChunkIntoIter<'_, T> {
     type Item = T;
 
     #[inline]
@@ -836,9 +836,9 @@ impl<'a, T> Iterator for ReadChunkIntoIter<'a, T> {
     }
 }
 
-impl<'a, T> ExactSizeIterator for ReadChunkIntoIter<'a, T> {}
+impl<T> ExactSizeIterator for ReadChunkIntoIter<'_, T> {}
 
-impl<'a, T> core::iter::FusedIterator for ReadChunkIntoIter<'a, T> {}
+impl<T> core::iter::FusedIterator for ReadChunkIntoIter<'_, T> {}
 
 #[cfg(feature = "std")]
 impl std::io::Write for Producer<u8> {
