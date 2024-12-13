@@ -17,4 +17,4 @@ jobs:
       - name: Check for changes in cache_padded.rs
         working-directory: crossbeam
         run: |
-          git diff origin/master -- crossbeam-utils/src/cache_padded.rs
+          git diff origin/master --exit-code -- crossbeam-utils/src/cache_padded.rs
