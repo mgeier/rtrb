@@ -289,6 +289,8 @@ pub struct Producer<T> {
     /// A copy of `buffer.tail` for quick access.
     ///
     /// This value is always in sync with `buffer.tail`.
+    // NB: Caching the tail seems to have little effect on Intel CPUs, but it seems to
+    //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
     cached_tail: Cell<usize>,
 }
 
@@ -496,6 +498,8 @@ pub struct Consumer<T> {
     /// A copy of `buffer.head` for quick access.
     ///
     /// This value is always in sync with `buffer.head`.
+    // NB: Caching the head seems to have little effect on Intel CPUs, but it seems to
+    //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
     cached_head: Cell<usize>,
 
     /// A copy of `buffer.tail` for quick access.
