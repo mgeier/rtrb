@@ -131,9 +131,11 @@ impl<T> RingBuffer<T> {
         let p = Producer {
             buffer: buffer.clone(),
             cached_head: Cell::new(0),
+            cached_tail: Cell::new(0),
         };
         let c = Consumer {
             buffer,
+            cached_head: Cell::new(0),
             cached_tail: Cell::new(0),
         };
         (p, c)
@@ -283,6 +285,11 @@ pub struct Producer<T> {
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.head`.
     cached_head: Cell<usize>,
+
+    /// A copy of `buffer.tail` for quick access.
+    ///
+    /// This value is always in sync with `buffer.tail`.
+    cached_tail: Cell<usize>,
 }
 
 // SAFETY: After moving a Producer to another thread, there is still only a single thread
@@ -315,6 +322,7 @@ impl<T> Producer<T> {
             unsafe { self.buffer.slot_ptr(tail).write(value) };
             let tail = self.buffer.increment1(tail);
             self.buffer.tail.store(tail, Ordering::Release);
+            self.cached_tail.set(tail);
             Ok(())
         } else {
             Err(PushError::Full(value))
@@ -342,9 +350,7 @@ impl<T> Producer<T> {
     pub fn slots(&self) -> usize {
         let head = self.buffer.head.load(Ordering::Acquire);
         self.cached_head.set(head);
-        // "tail" is only ever written by the producer thread, "Relaxed" is enough
-        let tail = self.buffer.tail.load(Ordering::Relaxed);
-        self.buffer.capacity - self.buffer.distance(head, tail)
+        self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
     }
 
     /// Returns `true` if there are currently no slots available for writing.
@@ -445,8 +451,7 @@ impl<T> Producer<T> {
     /// This is a strict subset of the functionality implemented in `write_chunk_uninit()`.
     /// For performance, this special case is immplemented separately.
     fn next_tail(&self) -> Option<usize> {
-        // "tail" is only ever written by the producer thread, "Relaxed" is enough
-        let tail = self.buffer.tail.load(Ordering::Relaxed);
+        let tail = self.cached_tail.get();
 
         // Check if the queue is *possibly* full.
         if self.buffer.distance(self.cached_head.get(), tail) == self.buffer.capacity {
@@ -487,6 +492,11 @@ impl<T> Producer<T> {
 pub struct Consumer<T> {
     /// A reference to the ring buffer.
     buffer: Arc<RingBuffer<T>>,
+
+    /// A copy of `buffer.head` for quick access.
+    ///
+    /// This value is always in sync with `buffer.head`.
+    cached_head: Cell<usize>,
 
     /// A copy of `buffer.tail` for quick access.
     ///
@@ -534,6 +544,7 @@ impl<T> Consumer<T> {
             let value = unsafe { self.buffer.slot_ptr(head).read() };
             let head = self.buffer.increment1(head);
             self.buffer.head.store(head, Ordering::Release);
+            self.cached_head.set(head);
             Ok(value)
         } else {
             Err(PopError::Empty)
@@ -588,9 +599,7 @@ impl<T> Consumer<T> {
     pub fn slots(&self) -> usize {
         let tail = self.buffer.tail.load(Ordering::Acquire);
         self.cached_tail.set(tail);
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = self.buffer.head.load(Ordering::Relaxed);
-        self.buffer.distance(head, tail)
+        self.buffer.distance(self.cached_head.get(), tail)
     }
 
     /// Returns `true` if there are currently no slots available for reading.
@@ -690,8 +699,7 @@ impl<T> Consumer<T> {
     /// This is a strict subset of the functionality implemented in `read_chunk()`.
     /// For performance, this special case is immplemented separately.
     fn next_head(&self) -> Option<usize> {
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = self.buffer.head.load(Ordering::Relaxed);
+        let head = self.cached_head.get();
 
         // Check if the queue is *possibly* empty.
         if head == self.cached_tail.get() {

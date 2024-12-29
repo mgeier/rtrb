@@ -234,8 +234,7 @@ impl<T> Producer<T> {
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
     pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
-        // "tail" is only ever written by the producer thread, "Relaxed" is enough
-        let tail = self.buffer.tail.load(Ordering::Relaxed);
+        let tail = self.cached_tail.get();
 
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) < n {
@@ -285,8 +284,7 @@ impl<T> Consumer<T> {
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = self.buffer.head.load(Ordering::Relaxed);
+        let head = self.cached_head.get();
 
         // Check if the queue has *possibly* not enough slots.
         if self.buffer.distance(head, self.cached_tail.get()) < n {
@@ -497,10 +495,9 @@ impl<T> WriteChunkUninit<'_, T> {
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
         let p = self.producer;
-        // "tail" is only ever written by the producer thread, "Relaxed" is enough
-        let tail = p.buffer.tail.load(Ordering::Relaxed);
-        let tail = p.buffer.increment(tail, n);
+        let tail = p.buffer.increment(p.cached_tail.get(), n);
         p.buffer.tail.store(tail, Ordering::Release);
+        p.cached_tail.set(tail);
         n
     }
 
@@ -744,10 +741,9 @@ impl<T> ReadChunk<'_, T> {
             unsafe { self.second_ptr.add(i).drop_in_place() };
         }
         let c = self.consumer;
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = c.buffer.head.load(Ordering::Relaxed);
-        let head = c.buffer.increment(head, n);
+        let head = c.buffer.increment(c.cached_head.get(), n);
         c.buffer.head.store(head, Ordering::Release);
+        c.cached_head.set(head);
         n
     }
 
@@ -799,10 +795,9 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
         let c = &self.chunk.consumer;
-        // "head" is only ever written by the consumer thread, "Relaxed" is enough
-        let head = c.buffer.head.load(Ordering::Relaxed);
-        let head = c.buffer.increment(head, self.iterated);
+        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
         c.buffer.head.store(head, Ordering::Release);
+        c.cached_head.set(head);
     }
 }
 
