@@ -137,6 +137,7 @@ to wait-free SPSC implementations:
 * [jack](https://crates.io/crates/jack) (FFI bindings for JACK, see `jack::Ringbuffer`)
 * [magnetic](https://crates.io/crates/magnetic) (see `magnetic::spsc` module)
 * [npnc](https://crates.io/crates/npnc) (see `npnc::bounded::spsc` module)
+* [omango](https://crates.io/crates/omango) (see `omango::queue::spsc::bounded()`)
 * [ringbuf](https://crates.io/crates/ringbuf) (supports const generics and heap allocation)
 * [ringbuffer-spsc](https://crates.io/crates/ringbuffer-spsc) (using const generics)
 * [shmem-ipc](https://crates.io/crates/shmem-ipc) (see `shmem_ipc::sharedring` and `shmem_ipc::ringbuf` modules)
