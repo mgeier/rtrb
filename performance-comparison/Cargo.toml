@@ -6,10 +6,12 @@ edition = "2021"
 publish = false
 
 [dependencies]
+# We use a fork that doesn't select the since stabilized `allocator_api` feature,
+# see https://github.com/polyfractal/bounded-spsc-queue/pull/22:
+bounded-spsc-queue = { git = "https://github.com/knsd/bounded-spsc-queue.git", branch = "feature/stable" }
 concurrent-queue = "2.3"
 crossbeam-queue = "0.3"
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
-npnc = "0.2"
 omango = "0.2"
 ringbuf = "0.4"
 rtrb = { path = ".." }

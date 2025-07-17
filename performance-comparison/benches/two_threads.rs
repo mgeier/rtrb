@@ -7,10 +7,10 @@ use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
 
 create_two_threads_benchmark!(
-    "1-npnc",
-    |capacity| npnc::bounded::spsc::channel(capacity.next_power_of_two()),
-    |p, i| p.produce(i).is_ok(),
-    |c| c.consume().ok(),
+    "1-bounded-spsc-queue", // calls next_power_of_two()
+    bounded_spsc_queue::make,
+    |p, i| p.try_push(i).is_none(),
+    |c| c.try_pop(),
     ::
     "2-crossbeam-queue-pr338",
     crossbeam_queue_pr338::spsc::new,
