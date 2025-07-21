@@ -47,4 +47,5 @@ create_two_threads_benchmark!(
     },
     |q, i| q.push(i).is_ok(),
     |q| q.pop(),
+    ::
 );

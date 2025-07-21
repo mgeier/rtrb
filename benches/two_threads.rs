@@ -1,5 +1,5 @@
 macro_rules! create_two_threads_benchmark {
-    ($($id:literal, $create:expr, $push:expr, $pop:expr,)::+) => {
+    ($($id:literal, $create:expr, $push:expr, $pop:expr,::)+) => {
 
 use std::convert::TryInto as _;
 use std::sync::{Arc, Barrier};
@@ -170,4 +170,5 @@ create_two_threads_benchmark!(
     rtrb::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
+    ::
 );
