@@ -144,12 +144,16 @@ to wait-free SPSC implementations:
 
 There are also implementations in other languages:
 
+* [atomic_queues](https://github.com/joadnacer/atomic_queues) (C++)
 * [boost::lockfree::spsc_queue](https://www.boost.org/doc/libs/master/doc/html/boost/lockfree/spsc_queue.html) (C++)
 * [folly::ProducerConsumerQueue](https://github.com/facebook/folly/blob/main/folly/docs/ProducerConsumerQueue.md) (C++)
 * [JACK ring buffer](https://jackaudio.org/api/ringbuffer_8h.html)  (C)
+* [lockfree::spsc::RingBuf](https://github.com/DNedic/lockfree) (C++)
 * [PortAudio ring buffer](http://portaudio.com/docs/v19-doxydocs-dev/pa__ringbuffer_8h.html) (C)
 * [readerwriterqueue](https://github.com/cameron314/readerwriterqueue) (C++)
 * [ringbuf.js](https://github.com/padenot/ringbuf.js) (JavaScript, using `SharedArrayBuffer`)
+* [spsc_queue](https://github.com/Deaod/spsc_queue) (C++)
+* [SPSC-Queue](https://github.com/drogalis/SPSC-Queue) (C++)
 * [SPSCQueue](https://github.com/rigtorp/SPSCQueue) (C++)
 
 If you know more alternatives for this list,
