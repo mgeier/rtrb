@@ -388,7 +388,8 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if `n` is greater than the number of slots in the chunk.
+    /// Panics in debug mode if `n` is greater than the number of slots in the chunk.
+    /// In release mode, `n` is capped to the number of slots and no panic happens.
     pub fn commit(mut self, n: usize) {
         // self.0 is always Some(chunk).
         let mut chunk = self.0.take().unwrap();
@@ -471,15 +472,17 @@ impl<T> WriteChunkUninit<'_, T> {
     ///
     /// # Panics
     ///
-    /// Panics if `n` is greater than the number of slots in the chunk.
+    /// Panics in debug mode if `n` is greater than the number of slots in the chunk.
+    /// In release mode, `n` is capped to the number of slots and no panic happens.
     ///
     /// # Safety
     ///
     /// The caller must make sure that the first `n` elements have been initialized.
     pub unsafe fn commit(self, n: usize) {
-        assert!(n <= self.len(), "cannot commit more than chunk size");
+        debug_assert!(n <= self.len(), "cannot commit more than chunk size");
+        let capped_n = n.min(self.len());
         // SAFETY: Delegated to the caller.
-        unsafe { self.commit_unchecked(n) };
+        unsafe { self.commit_unchecked(capped_n) };
     }
 
     /// Makes the whole chunk available for reading.
@@ -668,7 +671,8 @@ impl<T> ReadChunk<'_, T> {
     ///
     /// # Panics
     ///
-    /// Panics if `n` is greater than the number of slots in the chunk.
+    /// Panics in debug mode if `n` is greater than the number of slots in the chunk.
+    /// In release mode, `n` is capped to the number of slots and no panic happens.
     ///
     /// # Examples
     ///
@@ -717,9 +721,10 @@ impl<T> ReadChunk<'_, T> {
     /// assert_eq!(unsafe { DROP_COUNT }, 3);
     /// ```
     pub fn commit(self, n: usize) {
-        assert!(n <= self.len(), "cannot commit more than chunk size");
+        debug_assert!(n <= self.len(), "cannot commit more than chunk size");
+        let capped_n = n.min(self.len());
         // SAFETY: self.len() initialized elements have been obtained in read_chunk().
-        unsafe { self.commit_unchecked(n) };
+        unsafe { self.commit_unchecked(capped_n) };
     }
 
     /// Drops all slots of the chunk, making the space available for writing again.
