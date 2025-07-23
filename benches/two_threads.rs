@@ -30,7 +30,7 @@ $(
     assert!(pop(&mut c).is_none());
 )+
 
-    let mut group_large = criterion.benchmark_group("two-threads-large");
+    let mut group_large = criterion.benchmark_group("large");
     group_large.throughput(criterion::Throughput::Bytes(1));
 $(
     group_large.bench_function($id, |b| {
@@ -117,7 +117,7 @@ $(
 )+
     group_large.finish();
 
-    let mut group_small = criterion.benchmark_group("two-threads-small");
+    let mut group_small = criterion.benchmark_group("small");
     group_small.throughput(criterion::Throughput::Bytes(1));
 $(
     group_small.bench_function($id, |b| {
