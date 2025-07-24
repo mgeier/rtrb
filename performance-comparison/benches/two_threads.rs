@@ -32,15 +32,7 @@ create_two_threads_benchmark!(
     |p, i| p.try_push(i).is_ok(),
     |c| c.try_pop(),
     ::
-    "6-concurrent-queue",
-    |capacity| {
-        let q = std::sync::Arc::new(concurrent_queue::ConcurrentQueue::bounded(capacity));
-        (q.clone(), q)
-    },
-    |q, i| q.push(i).is_ok(),
-    |q| q.pop().ok(),
-    ::
-    "7-crossbeam-queue",
+    "6-crossbeam-queue",
     |capacity| {
         let q = std::sync::Arc::new(crossbeam_queue::ArrayQueue::new(capacity));
         (q.clone(), q)
