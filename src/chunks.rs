@@ -368,7 +368,7 @@ where
     /// or [`commit_all()`](WriteChunk::commit_all).
     /// If items are written but *not* committed afterwards,
     /// they will *not* become available for reading and
-    /// they will be leaked (which is only relevant if `T` implements [`Drop`]).
+    /// they will eventually be dropped (if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         // self.0 is always Some(chunk).
         let chunk = self.0.as_ref().unwrap();
