@@ -123,19 +123,7 @@
 //! where
 //!     T: Copy,
 //! {
-//!     let mut chunk = match queue.write_chunk_uninit(slice.len()) {
-//!         Ok(chunk) => chunk,
-//!         // Remaining slots are returned, this will always succeed:
-//!         Err(TooFewSlots(n)) => queue.write_chunk_uninit(n).unwrap(),
-//!     };
-//!     let end = chunk.len();
-//!     let (first, second) = chunk.as_mut_slices();
-//!     let mid = first.len();
-//!     slice[..mid].copy_to_uninit(first);
-//!     slice[mid..end].copy_to_uninit(second);
-//!     // SAFETY: All slots have been initialized
-//!     unsafe { chunk.commit_all() };
-//!     end
+//!     queue.push_slice(slice)
 //! }
 //! ```
 //!
@@ -261,6 +249,30 @@ impl<T> Producer<T> {
     }
 }
 
+impl<T: Copy> Producer<T> {
+    /// Copy items from slice to the ring buffer.
+    ///
+    /// Returns count of items been appended to the ring buffer.
+    #[inline]
+    pub fn push_slice(&mut self, buf: &[T]) -> usize {
+        use ChunkError::TooFewSlots;
+        let mut chunk = match self.write_chunk_uninit(buf.len()) {
+            Ok(chunk) => chunk,
+            Err(TooFewSlots(0)) => return 0,
+            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
+        };
+        let end = chunk.len();
+        let (first, second) = chunk.as_mut_slices();
+        let mid = first.len();
+        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+        buf[..mid].copy_to_uninit(first);
+        buf[mid..end].copy_to_uninit(second);
+        // SAFETY: All slots have been initialized
+        unsafe { chunk.commit_all() };
+        end
+    }
+}
+
 impl<T> Consumer<T> {
     /// Returns `n` slots for reading.
     ///
@@ -309,6 +321,31 @@ impl<T> Consumer<T> {
             second_len: n - first_len,
             consumer: self,
         })
+    }
+}
+
+impl<T: Copy> Consumer<T> {
+    /// Removes items from the ring buffer and writes them into a slice.
+    ///
+    /// Returns two slices:
+    /// - The first slice is the part of the input buffer that has been used (filled with popped data).
+    /// - The second slice is the remaining unused part of the input buffer.
+    #[inline]
+    pub fn pop_slice<'a>(&mut self, buf: &'a mut [T]) -> (&'a [T], &'a [T]) {
+        use ChunkError::TooFewSlots;
+        let chunk = match self.read_chunk(buf.len()) {
+            Ok(chunk) => chunk,
+            Err(TooFewSlots(0)) => return buf.split_at(0),
+            Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
+        };
+        let (first, second) = chunk.as_slices();
+        let mid = first.len();
+        let end = chunk.len();
+        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
+        buf[..mid].copy_from_slice(first);
+        buf[mid..end].copy_from_slice(second);
+        chunk.commit_all();
+        buf.split_at(end)
     }
 }
 
@@ -839,21 +876,14 @@ impl<T> core::iter::FusedIterator for ReadChunkIntoIter<'_, T> {}
 impl std::io::Write for Producer<u8> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        use ChunkError::TooFewSlots;
-        let mut chunk = match self.write_chunk_uninit(buf.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
-        };
-        let end = chunk.len();
-        let (first, second) = chunk.as_mut_slices();
-        let mid = first.len();
-        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..mid].copy_to_uninit(first);
-        buf[mid..end].copy_to_uninit(second);
-        // SAFETY: All slots have been initialized
-        unsafe { chunk.commit_all() };
-        Ok(end)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        match self.push_slice(buf) {
+            0 => Err(std::io::ErrorKind::WouldBlock.into()),
+            n => Ok(n),
+        }
     }
 
     #[inline]
@@ -867,20 +897,14 @@ impl std::io::Write for Producer<u8> {
 impl std::io::Read for Consumer<u8> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use ChunkError::TooFewSlots;
-        let chunk = match self.read_chunk(buf.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
-        };
-        let (first, second) = chunk.as_slices();
-        let mid = first.len();
-        let end = chunk.len();
-        // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..mid].copy_from_slice(first);
-        buf[mid..end].copy_from_slice(second);
-        chunk.commit_all();
-        Ok(end)
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        match self.pop_slice(buf) {
+            ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
+            (popped, _) => Ok(popped.len()),
+        }
     }
 }
 
