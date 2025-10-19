@@ -48,7 +48,7 @@ fn write_empty_buf() {
 
 #[test]
 fn read_empty_buf() {
-    let (mut p, mut c) = RingBuffer::new(2);
+    let (p, mut c) = RingBuffer::new(2);
     assert_eq!(p.push(99), Ok(()));
     assert_eq!(c.read(&mut []).unwrap(), 0);
 }

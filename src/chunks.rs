@@ -21,7 +21,7 @@
 //! ```
 //! use rtrb::RingBuffer;
 //!
-//! let (mut producer, mut consumer) = RingBuffer::new(5);
+//! let (producer, consumer) = RingBuffer::new(5);
 //!
 //! if let Ok(chunk) = producer.write_chunk_uninit(4) {
 //!     chunk.fill_from_iter([10, 11, 12]);
@@ -96,7 +96,7 @@
 //! ```
 //! use rtrb::{Producer, CopyToUninit};
 //!
-//! fn push_entire_slice<'a, T>(queue: &mut Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
+//! fn push_entire_slice<'a, T>(queue: &Producer<T>, slice: &'a [T]) -> Result<(), &'a [T]>
 //! where
 //!     T: Copy,
 //! {
@@ -119,7 +119,7 @@
 //! ```
 //! use rtrb::{Producer, CopyToUninit, chunks::ChunkError::TooFewSlots};
 //!
-//! fn push_partial_slice<T>(queue: &mut Producer<T>, slice: &[T]) -> usize
+//! fn push_partial_slice<T>(queue: &Producer<T>, slice: &[T]) -> usize
 //! where
 //!     T: Copy,
 //! {
@@ -145,7 +145,7 @@
 //! ```
 //! use rtrb::{Producer, chunks::ChunkError::TooFewSlots};
 //!
-//! fn push_from_iter<T, I>(queue: &mut Producer<T>, iter: I) -> usize
+//! fn push_from_iter<T, I>(queue: &Producer<T>, iter: I) -> usize
 //! where
 //!     T: Default,
 //!     I: IntoIterator<Item = T>,
@@ -199,7 +199,7 @@ impl<T> Producer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn write_chunk(&mut self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
+    pub fn write_chunk(&self, n: usize) -> Result<WriteChunk<'_, T>, ChunkError>
     where
         T: Default,
     {
@@ -233,7 +233,7 @@ impl<T> Producer<T> {
     ///
     /// For a safe alternative that provides mutable slices of [`Default`]-initialized slots,
     /// see [`Producer::write_chunk()`].
-    pub fn write_chunk_uninit(&mut self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
+    pub fn write_chunk_uninit(&self, n: usize) -> Result<WriteChunkUninit<'_, T>, ChunkError> {
         let tail = self.cached_tail.get();
 
         // Check if the queue has *possibly* not enough slots.
@@ -283,7 +283,7 @@ impl<T> Consumer<T> {
     /// # Examples
     ///
     /// See the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn read_chunk(&mut self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
+    pub fn read_chunk(&self, n: usize) -> Result<ReadChunk<'_, T>, ChunkError> {
         let head = self.cached_head.get();
 
         // Check if the queue has *possibly* not enough slots.

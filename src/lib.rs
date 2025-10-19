@@ -26,7 +26,7 @@
 //! ```
 //! use rtrb::{RingBuffer, PushError, PopError};
 //!
-//! let (mut producer, mut consumer) = RingBuffer::new(2);
+//! let (producer, consumer) = RingBuffer::new(2);
 //!
 //! assert_eq!(producer.push(10), Ok(()));
 //! assert_eq!(producer.push(20), Ok(()));
@@ -115,7 +115,7 @@ impl<T> RingBuffer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut producer, consumer) = RingBuffer::new(100);
+    /// let (producer, consumer) = RingBuffer::new(100);
     /// assert_eq!(producer.push(0.0f32), Ok(()));
     /// ```
     #[allow(clippy::new_ret_no_self)]
@@ -313,12 +313,12 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::{RingBuffer, PushError};
     ///
-    /// let (mut p, c) = RingBuffer::new(1);
+    /// let (p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(p.push(20), Err(PushError::Full(20)));
     /// ```
-    pub fn push(&mut self, value: T) -> Result<(), PushError<T>> {
+    pub fn push(&self, value: T) -> Result<(), PushError<T>> {
         if let Some(tail) = self.next_tail() {
             // SAFETY: tail points to an empty slot.
             unsafe { self.buffer.slot_ptr(tail).write(value) };
@@ -406,7 +406,7 @@ impl<T> Producer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, c) = RingBuffer::new(7);
+    /// let (p, c) = RingBuffer::new(7);
     /// assert!(!p.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(c);
@@ -527,7 +527,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::{PopError, RingBuffer};
     ///
-    /// let (mut p, mut c) = RingBuffer::new(1);
+    /// let (p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(p.push(10), Ok(()));
     /// assert_eq!(c.pop(), Ok(10));
@@ -538,11 +538,11 @@ impl<T> Consumer<T> {
     ///
     /// ```
     /// # use rtrb::RingBuffer;
-    /// # let (mut p, mut c) = RingBuffer::new(1);
+    /// # let (p, c) = RingBuffer::new(1);
     /// assert_eq!(p.push(20), Ok(()));
     /// assert_eq!(c.pop().ok(), Some(20));
     /// ```
-    pub fn pop(&mut self) -> Result<T, PopError> {
+    pub fn pop(&self) -> Result<T, PopError> {
         if let Some(head) = self.next_head() {
             // SAFETY: head points to an initialized slot.
             let value = unsafe { self.buffer.slot_ptr(head).read() };
@@ -566,7 +566,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::{PeekError, RingBuffer};
     ///
-    /// let (mut p, c) = RingBuffer::new(1);
+    /// let (p, c) = RingBuffer::new(1);
     ///
     /// assert_eq!(c.peek(), Err(PeekError::Empty));
     /// assert_eq!(p.push(10), Ok(()));
@@ -657,7 +657,7 @@ impl<T> Consumer<T> {
     /// ```
     /// use rtrb::RingBuffer;
     ///
-    /// let (mut p, mut c) = RingBuffer::new(7);
+    /// let (p, c) = RingBuffer::new(7);
     /// assert!(!c.is_abandoned());
     /// assert_eq!(p.push(10), Ok(()));
     /// drop(p);

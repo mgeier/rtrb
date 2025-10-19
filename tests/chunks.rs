@@ -2,7 +2,7 @@ use rtrb::{chunks::ChunkError, RingBuffer};
 
 #[test]
 fn iterators() {
-    let (mut p, mut c) = RingBuffer::new(3);
+    let (p, c) = RingBuffer::new(3);
     if let Ok(chunk) = p.write_chunk_uninit(3) {
         chunk.fill_from_iter([10, 11]);
     } else {
@@ -40,7 +40,7 @@ fn iterators() {
 
 #[test]
 fn zero_capacity() {
-    let (mut p, mut c) = RingBuffer::<i32>::new(0);
+    let (p, c) = RingBuffer::<i32>::new(0);
 
     assert_eq!(p.write_chunk(1).unwrap_err(), ChunkError::TooFewSlots(0));
     assert_eq!(c.read_chunk(1).unwrap_err(), ChunkError::TooFewSlots(0));
@@ -70,7 +70,7 @@ fn zero_capacity() {
 
 #[test]
 fn single_capacity() {
-    let (mut p, mut c) = RingBuffer::<i32>::new(1);
+    let (p, c) = RingBuffer::<i32>::new(1);
 
     if let Ok(mut chunk) = p.write_chunk(1) {
         assert_eq!(chunk.len(), 1);
@@ -120,7 +120,7 @@ fn drop_write_chunk() {
     }
 
     {
-        let (mut p, mut c) = RingBuffer::new(3);
+        let (p, c) = RingBuffer::new(3);
 
         if let Ok(mut chunk) = p.write_chunk(3) {
             let (first, _second) = chunk.as_mut_slices();
@@ -155,7 +155,7 @@ fn drop_write_chunk() {
 
 #[test]
 fn trait_impls() {
-    let (mut p, mut c) = RingBuffer::<u8>::new(0);
+    let (p, c) = RingBuffer::<u8>::new(0);
 
     if let Ok(chunk) = p.write_chunk(0) {
         assert!(format!("{:?}", chunk).starts_with("WriteChunk"));
