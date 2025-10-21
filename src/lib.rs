@@ -573,6 +573,22 @@ impl<T> Consumer<T> {
     /// assert_eq!(c.peek(), Ok(&10));
     /// assert_eq!(c.peek(), Ok(&10));
     /// ```
+    ///
+    /// Note that `peek()` takes a shared reference to `self`,
+    /// which means that other methods that take `&self` can be called
+    /// while the returned reference is still in use.
+    /// However, calling methods that take `&mut self`
+    /// (like [`Consumer::pop()`] and [`Consumer::read_chunk()`]) leads to a compiler error:
+    ///
+    /// ```compile_fail
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::new(8);
+    /// p.push(10).unwrap();
+    /// let shared_ref = c.peek().unwrap();
+    /// let value = c.pop().unwrap();
+    /// assert_eq!(shared_ref, &10);
+    /// ```
     pub fn peek(&self) -> Result<&T, PeekError> {
         if let Some(head) = self.next_head() {
             // SAFETY: head points to an initialized slot.
