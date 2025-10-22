@@ -178,3 +178,35 @@ fn trait_impls() {
     assert_eq!(format!("{:?}", e), "TooFewSlots(0)");
     assert_eq!(e.to_string(), "only 0 slots available in ring buffer");
 }
+
+#[test]
+fn push_pop_slice() {
+    let mut buf = [0; 16];
+    let (mut p, mut c) = RingBuffer::<u8>::new(8);
+
+    assert_eq!(p.push_slice(&[1, 2, 3]), 3);
+    assert_eq!(p.push_slice(&[4, 5]), 2);
+
+    if let n @ 1.. = c.pop_slice(&mut buf) {
+        assert_eq!(&buf[..n], &[1, 2, 3, 4, 5]);
+        p.push_slice(&buf[..n]);
+    } else {
+        unreachable!();
+    }
+
+    assert_eq!(p.push_slice(&[1, 2, 3, 4, 5]), 3);
+
+    if let n @ 1.. = c.pop_slice(&mut buf) {
+        assert_eq!(&buf[..n], &[1, 2, 3, 4, 5, 1, 2, 3]);
+        assert_eq!(p.push_slice(&buf[..n]), 8);
+    } else {
+        unreachable!();
+    }
+
+    let mut short_buf = [0; 3];
+    if let n @ 1.. = c.pop_slice(&mut short_buf) {
+        assert_eq!(&short_buf[..n], &[1, 2, 3]);
+    } else {
+        unreachable!();
+    }
+}
