@@ -5,9 +5,10 @@
 //! Writing two elements to a three-element queue makes sure
 //! that there is a ring buffer wrap-around every second time.
 
+use std::hint::black_box;
 use std::io::{Read, Write};
 
-use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::{CopyToUninit, RingBuffer};
@@ -19,6 +20,7 @@ where
 {
     group.bench_function(id, |b| {
         let mut i: u8 = 0;
+        #[allow(clippy::incompatible_msrv)]
         b.iter_batched(
             || {
                 let mut data = [i, 0];

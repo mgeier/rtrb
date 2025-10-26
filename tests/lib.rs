@@ -68,7 +68,7 @@ fn parallel() {
 
 #[test]
 fn drops() {
-    use rand::{thread_rng, Rng};
+    use rand::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     const RUNS: usize = if cfg!(miri) { 10 } else { 100 };
@@ -84,11 +84,11 @@ fn drops() {
         }
     }
 
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
 
     for _ in 0..RUNS {
-        let steps = rng.gen_range(0..if cfg!(miri) { 100 } else { 10_000 });
-        let additional = rng.gen_range(0..50);
+        let steps = rng.random_range(0..if cfg!(miri) { 100 } else { 10_000 });
+        let additional = rng.random_range(0..50);
 
         DROPS.store(0, Ordering::SeqCst);
         let (mut p, mut c) = RingBuffer::new(50);

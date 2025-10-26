@@ -2,9 +2,10 @@
 //!
 //! Single-threaded usage is *not* a typical use case!
 
+use std::hint::black_box;
 use std::io::{Read, Write};
 
-use criterion::{black_box, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::{CopyToUninit, RingBuffer};
@@ -16,6 +17,7 @@ where
     F: FnMut(&[u8]) -> [u8; CHUNK_SIZE],
     M: criterion::measurement::Measurement,
 {
+    #[allow(clippy::incompatible_msrv)]
     group.bench_function(id, |b| {
         let mut data = [0; CHUNK_SIZE];
         let mut i: u8 = 0;

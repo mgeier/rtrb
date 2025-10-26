@@ -3,7 +3,9 @@
 //! This is *not* a typical use case but it should nevertheless be useful
 //! for comparing the overhead of different methods.
 
-use criterion::{black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
 use rtrb::RingBuffer;
@@ -15,6 +17,7 @@ where
 {
     group.bench_function(id, |b| {
         let mut i = 0;
+        #[allow(clippy::incompatible_msrv)]
         b.iter(|| {
             assert_eq!(f(black_box(i)), black_box(i));
             i = i.wrapping_add(1);
