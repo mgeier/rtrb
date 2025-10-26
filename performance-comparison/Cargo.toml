@@ -17,7 +17,7 @@ ringbuf = "0.4"
 rtrb = { path = ".." }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.7"
 
 # aggressive optimization for benchmarks
 [profile.bench]
