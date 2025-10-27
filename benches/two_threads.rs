@@ -159,6 +159,125 @@ $(
     });
 )+
     group_small.finish();
+
+    let mut group_eager_push = criterion.benchmark_group("eager-push");
+    group_eager_push.throughput(criterion::Throughput::Bytes(1));
+    group_eager_push.plot_config(criterion::PlotConfiguration::default()
+        .summary_scale(criterion::AxisScale::Logarithmic));
+$(
+    group_eager_push.bench_function($id, |b| {
+        b.iter_custom(|iters| {
+            let (create, push, pop) = help_with_type_inference($create, $push, $pop);
+            let queue_size = 4096;
+            let (mut p0, mut c0) = create(queue_size);
+            let (mut p1, mut c1) = create(queue_size);
+
+            let echo_thread = std::thread::spawn(move || {
+                for _ in 0..iters {
+                    let x = loop {
+                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                        if let Some(x) = black_box(pop(&mut c0)) {
+                            break x;
+                        }
+                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                        std::hint::spin_loop();
+                    };
+                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                    while !push(&mut p1, black_box(x)) {
+                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                        std::hint::spin_loop();
+                    }
+                }
+            });
+
+            // fill both queues (if there is enough data) before starting the measurement:
+            let mut sent_i = 0;
+            while (sent_i < iters) && (sent_i < 2 * queue_size as u64) {
+                if push(&mut p0, sent_i as u8) {
+                    sent_i += 1;
+                }
+            }
+
+            let start = std::time::Instant::now();
+
+            let mut expected_i = 0;
+            while expected_i < iters {
+                // eagerly push as many items as possible ...
+                #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                while push(&mut p0, black_box(sent_i as u8)) {
+                    sent_i += 1;
+                }
+                // ... then try to pop a single item:
+                #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                if let Some(x) = black_box(pop(&mut c1)) {
+                    assert_eq!(x, expected_i as u8);
+                    expected_i += 1;
+                }
+            }
+
+            let stop = std::time::Instant::now();
+            echo_thread.join().unwrap();
+            stop.duration_since(start)
+        });
+    });
+)+
+    group_eager_push.finish();
+
+    let mut group_eager_pop = criterion.benchmark_group("eager-pop");
+    group_eager_pop.throughput(criterion::Throughput::Bytes(1));
+    group_eager_pop.plot_config(criterion::PlotConfiguration::default()
+        .summary_scale(criterion::AxisScale::Logarithmic));
+$(
+    group_eager_pop.bench_function($id, |b| {
+        b.iter_custom(|iters| {
+            let (create, push, pop) = help_with_type_inference($create, $push, $pop);
+            let queue_size = 4096;
+            let (mut p0, mut c0) = create(queue_size);
+            let (mut p1, mut c1) = create(queue_size);
+
+            let echo_thread = std::thread::spawn(move || {
+                for _ in 0..iters {
+                    let x = loop {
+                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                        if let Some(x) = black_box(pop(&mut c0)) {
+                            break x;
+                        }
+                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                        std::hint::spin_loop();
+                    };
+                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                    while !push(&mut p1, black_box(x)) {
+                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                        std::hint::spin_loop();
+                    }
+                }
+            });
+
+            let start = std::time::Instant::now();
+
+            let mut sent_i = 0;
+            let mut expected_i = 0;
+            while expected_i < iters {
+                // eagerly pop as many items as possible ...
+                #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                while let Some(x) = black_box(pop(&mut c1)) {
+                    assert_eq!(x, expected_i as u8);
+                    expected_i += 1;
+                }
+                // ... then try to push a single item:
+                #[allow(clippy::incompatible_msrv)] // stable since 1.49
+                if push(&mut p0, black_box(sent_i as u8)) {
+                    sent_i += 1;
+                }
+            }
+
+            let stop = std::time::Instant::now();
+            echo_thread.join().unwrap();
+            stop.duration_since(start)
+        });
+    });
+)+
+    group_eager_pop.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);
