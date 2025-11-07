@@ -52,3 +52,7 @@ harness = false
 [[bench]]
 name = "two_threads"
 harness = false
+
+[[bench]]
+name = "two_threads_const"
+harness = false
