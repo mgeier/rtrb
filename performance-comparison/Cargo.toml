@@ -12,8 +12,10 @@ bounded-spsc-queue = { git = "https://github.com/knsd/bounded-spsc-queue.git", b
 concurrent-queue = "2.3"
 crossbeam-queue = "0.3"
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
+heapless = "0.9"
 omango = "0.2"
 ringbuf = "0.4"
+ringbuffer-spsc = "0.1.13"
 rtrb = { path = ".." }
 
 [dev-dependencies]
@@ -30,4 +32,8 @@ bench = false # Don't disturb criterion command line parsing
 
 [[bench]]
 name = "two_threads"
+harness = false
+
+[[bench]]
+name = "two_threads_const"
 harness = false
