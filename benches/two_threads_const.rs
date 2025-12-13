@@ -27,7 +27,7 @@ $(
     // NB: wrap-around differs between implementations (N vs. N-1 elements)
 )+
 
-    let mut group_eager_pop = criterion.benchmark_group("eager-pop");
+    let mut group_eager_pop = criterion.benchmark_group("const-eager-pop");
     group_eager_pop.plot_config(criterion::PlotConfiguration::default()
         .summary_scale(criterion::AxisScale::Logarithmic));
 
