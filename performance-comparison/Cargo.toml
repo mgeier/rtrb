@@ -11,6 +11,7 @@ publish = false
 bounded-spsc-queue = { git = "https://github.com/knsd/bounded-spsc-queue.git", branch = "feature/stable" }
 crossbeam-queue = "0.3"
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
+gil = "0.5"
 heapless = "0.9"
 omango = "0.2"
 ringbuf = "0.4"

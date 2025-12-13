@@ -2,15 +2,17 @@
 #[macro_use]
 mod two_threads;
 
+use core::num::NonZeroUsize;
+
 use ringbuf::traits::Consumer as _;
 use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
 
 create_two_threads_benchmark!(
-    "1-bounded-spsc-queue", // calls next_power_of_two()
-    bounded_spsc_queue::make,
-    |p, i| p.try_push(i).is_none(),
-    |c| c.try_pop(),
+    "1-gil",
+    |capacity| gil::spsc::channel(NonZeroUsize::new(capacity).unwrap()),
+    |p, i| p.try_send(i).is_ok(),
+    |c| c.try_recv(),
     ::
     "2-crossbeam-queue-pr338",
     crossbeam_queue_pr338::spsc::new,
