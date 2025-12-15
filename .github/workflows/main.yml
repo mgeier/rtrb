@@ -75,7 +75,7 @@ jobs:
         run: |
           cargo rustdoc --all-features -- -D warnings
       - name: Upload docs
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: docs
           path: target/doc/*
