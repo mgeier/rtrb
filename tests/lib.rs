@@ -24,6 +24,33 @@ fn zero_capacity() {
 }
 
 #[test]
+fn has_slots() {
+    let (mut p, mut c) = RingBuffer::<i32>::new(3);
+
+    assert!(p.has_slots(0));
+    assert!(c.has_slots(0));
+
+    assert!(p.has_slots(3));
+    assert!(!p.has_slots(4));
+    assert!(!c.has_slots(1));
+
+    p.push(10).unwrap();
+    assert!(p.has_slots(2));
+    assert!(!p.has_slots(3));
+    assert!(c.has_slots(1));
+    assert!(!c.has_slots(2));
+
+    p.push(11).unwrap();
+    p.push(12).unwrap();
+    assert!(!p.has_slots(1));
+    assert!(c.has_slots(3));
+
+    assert_eq!(c.pop(), Ok(10));
+    assert!(p.has_slots(1));
+    assert!(c.has_slots(2));
+}
+
+#[test]
 fn zero_sized_type() {
     struct ZeroSized;
     assert_eq!(std::mem::size_of::<ZeroSized>(), 0);

@@ -355,6 +355,58 @@ impl<T> Producer<T> {
         self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
     }
 
+    /// Returns `true` if there are currently at least `n` slots available for writing.
+    ///
+    /// If the corresponding [`Consumer`] is consuming items in another thread,
+    /// the number of available slots may increase at any time
+    /// (up to the [`RingBuffer::capacity()`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, mut c) = RingBuffer::<f32>::new(2);
+    ///
+    /// assert!(p.has_slots(2));
+    /// p.push(1.0).unwrap();
+    /// assert!(p.has_slots(1));
+    /// assert!(!p.has_slots(2));
+    /// ```
+    ///
+    /// Since items can be concurrently consumed on another thread,
+    /// a `false` result might become `true` at any time:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(8);
+    /// if !p.has_slots(8) {
+    ///     // The buffer might have fewer than 8 free slots, but it might as well not
+    ///     // if items were just consumed on another thread.
+    /// }
+    /// ```
+    ///
+    /// However, if it does have `n` slots, another thread cannot change that:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(8);
+    /// if p.has_slots(8) {
+    ///     // At least 8 slots are guaranteed to be available for writing.
+    /// }
+    /// ```
+    pub fn has_slots(&self, n: usize) -> bool {
+        let tail = self.cached_tail.get();
+
+        if self.buffer.capacity - self.buffer.distance(self.cached_head.get(), tail) >= n {
+            return true;
+        }
+
+        let head = self.buffer.head.load(Ordering::Acquire);
+        self.cached_head.set(head);
+        self.buffer.capacity - self.buffer.distance(head, tail) >= n
+    }
+
     /// Returns `true` if there are currently no slots available for writing.
     ///
     /// A full ring buffer might cease to be full at any time
@@ -392,7 +444,7 @@ impl<T> Producer<T> {
     /// }
     /// ```
     pub fn is_full(&self) -> bool {
-        self.next_tail().is_none()
+        !self.has_slots(1)
     }
 
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
@@ -622,6 +674,58 @@ impl<T> Consumer<T> {
         self.buffer.distance(self.cached_head.get(), tail)
     }
 
+    /// Returns `true` if there are currently at least `n` slots available for reading.
+    ///
+    /// If the corresponding [`Producer`] is producing items in another thread,
+    /// the number of available slots may increase at any time
+    /// (up to the [`RingBuffer::capacity()`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rtrb::RingBuffer;
+    ///
+    /// let (mut p, c) = RingBuffer::<f32>::new(2);
+    ///
+    /// assert!(!c.has_slots(1));
+    /// p.push(1.0).unwrap();
+    /// assert!(c.has_slots(1));
+    /// assert!(!c.has_slots(2));
+    /// ```
+    ///
+    /// Since items can be concurrently produced on another thread,
+    /// a `false` result might become `true` at any time:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(8);
+    /// if !c.has_slots(8) {
+    ///     // The buffer might have fewer than 8 readable slots, but it might as well not
+    ///     // if items were just produced on another thread.
+    /// }
+    /// ```
+    ///
+    /// However, if it does have `n` slots, another thread cannot change that:
+    ///
+    /// ```
+    /// # use rtrb::RingBuffer;
+    /// # let (p, c) = RingBuffer::<f32>::new(8);
+    /// if c.has_slots(8) {
+    ///     // At least 8 slots are guaranteed to be available for reading.
+    /// }
+    /// ```
+    pub fn has_slots(&self, n: usize) -> bool {
+        let head = self.cached_head.get();
+        
+        if self.buffer.distance(head, self.cached_tail.get()) >= n {
+            return true;
+        }
+
+        let tail = self.buffer.tail.load(Ordering::Acquire);
+        self.cached_tail.set(tail);
+        self.buffer.distance(head, tail) >= n
+    }
+
     /// Returns `true` if there are currently no slots available for reading.
     ///
     /// An empty ring buffer might cease to be empty at any time
@@ -659,7 +763,7 @@ impl<T> Consumer<T> {
     /// }
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.next_head().is_none()
+        !self.has_slots(1)
     }
 
     /// Returns `true` if the corresponding [`Producer`] has been destroyed.
