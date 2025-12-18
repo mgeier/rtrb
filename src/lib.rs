@@ -716,7 +716,7 @@ impl<T> Consumer<T> {
     /// ```
     pub fn has_slots(&self, n: usize) -> bool {
         let head = self.cached_head.get();
-        
+
         if self.buffer.distance(head, self.cached_tail.get()) >= n {
             return true;
         }
