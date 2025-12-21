@@ -333,6 +333,21 @@ impl<T: Copy> Consumer<T> {
     /// - The first slice is the part of the input buffer that has been used (filled with popped data).
     /// - The second slice is the remaining unused part of the input buffer.
     pub fn pop_slice<'a>(&mut self, buf: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
+        // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
+        // However, since we can guarantee that only valid T values will ever be written,
+        // and the reference never leaves our control, it should be fine.
+        let (popped, remainder) =
+            unsafe { self.pop_slice_uninit(&mut *(buf as *mut [T] as *mut _)) };
+        // NB: This can be replaced by `assume_init_mut()` once stabilized:
+        // SAFETY: `remainder` is a subslice of the original initialized buffer.
+        (popped, unsafe { &mut *(remainder as *mut _ as *mut [T]) })
+    }
+
+    /// Removes items from the ring buffer and writes them into an uninitialized slice.
+    pub fn pop_slice_uninit<'a>(
+        &mut self,
+        buf: &'a mut [MaybeUninit<T>],
+    ) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
         use ChunkError::TooFewSlots;
         let chunk = match self.read_chunk(buf.len()) {
             Ok(chunk) => chunk,
@@ -343,10 +358,13 @@ impl<T: Copy> Consumer<T> {
         let mid = first.len();
         let end = chunk.len();
         // NB: If buf.is_empty(), chunk will be empty as well and the following are no-ops:
-        buf[..mid].copy_from_slice(first);
-        buf[mid..end].copy_from_slice(second);
+        first.copy_to_uninit(&mut buf[..mid]);
+        second.copy_to_uninit(&mut buf[mid..end]);
         chunk.commit_all();
-        buf.split_at_mut(end)
+        let (popped, remainder) = buf.split_at_mut(end);
+        // NB: This can be replaced by `assume_init_mut()` once stabilized:
+        // SAFETY: `popped` (i.e. `buf[..end]`) has been initialized above.
+        (unsafe { &mut *(popped as *mut _ as *mut [T]) }, remainder)
     }
 }
 
