@@ -24,7 +24,7 @@ std = []
 
 [dev-dependencies]
 rand = "0.9"
-criterion = "0.7"
+criterion = "0.8"
 # TODO: This is only needed for the doctests of cache_padded.rs! Is there a way to avoid this?
 crossbeam-utils = { version = "0.8", default-features = false }
 
@@ -51,6 +51,10 @@ harness = false
 
 [[bench]]
 name = "two_threads"
+harness = false
+
+[[bench]]
+name = "two_threads_with_chunks"
 harness = false
 
 [[bench]]
