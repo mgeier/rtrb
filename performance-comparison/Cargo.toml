@@ -15,11 +15,11 @@ crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = 
 heapless = "0.9"
 omango = "0.2"
 ringbuf = "0.4"
-ringbuffer-spsc = "0.1.13"
+ringbuffer-spsc = "0.2"
 rtrb = { path = ".." }
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 
 # aggressive optimization for benchmarks
 [profile.bench]
