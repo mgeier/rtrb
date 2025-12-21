@@ -9,7 +9,6 @@ publish = false
 # We use a fork that doesn't select the since stabilized `allocator_api` feature,
 # see https://github.com/polyfractal/bounded-spsc-queue/pull/22:
 bounded-spsc-queue = { git = "https://github.com/knsd/bounded-spsc-queue.git", branch = "feature/stable" }
-concurrent-queue = "2.3"
 crossbeam-queue = "0.3"
 crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = "spsc", package = "crossbeam-queue" }
 heapless = "0.9"
@@ -19,7 +18,7 @@ ringbuffer-spsc = "0.1.13"
 rtrb = { path = ".." }
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 
 # aggressive optimization for benchmarks
 [profile.bench]
@@ -32,6 +31,10 @@ bench = false # Don't disturb criterion command line parsing
 
 [[bench]]
 name = "two_threads"
+harness = false
+
+[[bench]]
+name = "two_threads_with_chunks"
 harness = false
 
 [[bench]]
