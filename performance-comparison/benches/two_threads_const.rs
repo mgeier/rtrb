@@ -12,13 +12,6 @@ create_two_threads_const_benchmark!(
     |p, i| p.push(i).is_ok(),
     |c| c.pop().ok(),
     ::
-    "ringbuffer-spsc",
-    { ($N:expr) => {
-        ringbuffer_spsc::RingBuffer::<u8, $N>::init()
-    }},
-    |p, i| p.push(i).is_none(),
-    |c| c.pull(),
-    ::
     "ringbuf",
     { ($N:expr) => {
         Box::leak(Box::new(ringbuf::StaticRb::<u8, $N>::default())).split_ref()

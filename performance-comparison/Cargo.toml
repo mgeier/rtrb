@@ -14,7 +14,7 @@ crossbeam-queue-pr338 = { git = "https://github.com/mgeier/crossbeam", branch = 
 heapless = "0.9"
 omango = "0.2"
 ringbuf = "0.4"
-ringbuffer-spsc = "0.1.13"
+ringbuffer-spsc = "0.2"
 rtrb = { path = ".." }
 
 [dev-dependencies]

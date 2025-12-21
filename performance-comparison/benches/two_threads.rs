@@ -27,12 +27,17 @@ create_two_threads_benchmark!(
     |p, i| p.try_send(i).is_ok(),
     |c| c.try_recv().ok(),
     ::
-    "5-ringbuf",
+    "5-ringbuffer-spsc",
+    |capacity| ringbuffer_spsc::ringbuffer(capacity.next_power_of_two()),
+    |p, i| p.push(i).is_none(),
+    |c| c.pull(),
+    ::
+    "6-ringbuf",
     |capacity| ringbuf::HeapRb::new(capacity).split(),
     |p, i| p.try_push(i).is_ok(),
     |c| c.try_pop(),
     ::
-    "6-crossbeam-queue",
+    "7-crossbeam-queue",
     |capacity| {
         let q = std::sync::Arc::new(crossbeam_queue::ArrayQueue::new(capacity));
         (q.clone(), q)
