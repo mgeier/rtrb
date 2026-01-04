@@ -40,10 +40,17 @@
 //! ```
 //!
 //! See the documentation of the [`chunks#examples`] module
-//! for examples that write multiple items at once with
-//! [`Producer::write_chunk_uninit()`] and [`Producer::write_chunk()`]
-//! and read multiple items with [`Consumer::read_chunk()`].
-
+//! for examples that write multiple items at once with ...
+//!
+//!   * [`Producer::write_chunk()`]
+//!   * [`Producer::write_chunk_uninit()`]
+//!   * [`Producer::push_slice()`] (if `T: Copy`)
+//!
+//! ... and read multiple items at once with ...
+//!
+//!   * [`Consumer::read_chunk()`]
+//!   * [`Consumer::pop_slice()`] (if `T: Copy`)
+//!   * [`Consumer::pop_slice_uninit()`] (if `T: Copy`)
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(rust_2018_idioms)]
 #![deny(missing_docs, missing_debug_implementations)]
@@ -265,8 +272,8 @@ impl<T> Eq for RingBuffer<T> {}
 /// (together with its counterpart, the [`Consumer`]).
 ///
 /// Individual elements can be moved into the ring buffer with [`Producer::push()`],
-/// multiple elements at once can be written with [`Producer::write_chunk()`]
-/// and [`Producer::write_chunk_uninit()`].
+/// multiple elements at once can be written with [`Producer::write_chunk()`],
+/// [`Producer::write_chunk_uninit()`] and [`Producer::push_slice()`].
 ///
 /// The number of free slots currently available for writing can be obtained with
 /// [`Producer::slots()`].
@@ -480,7 +487,8 @@ impl<T> Producer<T> {
 /// (together with its counterpart, the [`Producer`]).
 ///
 /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
-/// multiple elements at once can be read with [`Consumer::read_chunk()`].
+/// multiple elements at once can be read with [`Consumer::read_chunk()`],
+/// [`Consumer::pop_slice()`] and [`Consumer::pop_slice_uninit()`].
 ///
 /// The number of slots currently available for reading can be obtained with
 /// [`Consumer::slots()`].
