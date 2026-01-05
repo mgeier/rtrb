@@ -173,7 +173,7 @@ criterion_main!(benches);
 use std::io::{Read as _, Write as _};
 
 create_two_threads_with_chunks_benchmark!(
-    "rtrb-write-read",
+    "write-read",
     rtrb::RingBuffer::new,
     |p, s| match p.write(s) {
         Ok(n) => &s[n..],
@@ -183,5 +183,10 @@ create_two_threads_with_chunks_benchmark!(
         Ok(n) => &s[..n],
         _ => &[],
     },
+    ::
+    "push_slice-pop_slice",
+    rtrb::RingBuffer::new,
+    |p, s| p.push_slice(s).1,
+    |c, s| c.pop_slice(s).0,
     ::
 );
