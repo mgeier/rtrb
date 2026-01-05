@@ -4,7 +4,9 @@ macro_rules! create_two_threads_with_chunks_benchmark {
     ($($id:literal, $create:expr, $push:expr, $pop:expr, ::)+) => {
 
 use std::convert::TryFrom as _;
+use std::convert::TryInto as _;
 use std::hint::black_box;
+use std::sync::{Arc, Barrier};
 
 use criterion::{BenchmarkId, criterion_group, criterion_main};
 
@@ -33,6 +35,109 @@ $(
     assert!(pop(&mut c, &mut dst).is_empty());
     assert_eq!(dst, [40, 20, 30]);
 )+
+
+    let mut group_large = criterion.benchmark_group("large-with-chunks");
+$(
+    group_large.bench_function($id, |b| {
+        b.iter_custom(|iters| {
+            if iters < 3 {
+                return std::time::Duration::ZERO;
+            }
+            let (create, push, pop) = help_with_type_inference($create, $push, $pop);
+            // Queue is so long that there is no contention between threads.
+            let (mut p, mut c) = create((3 * iters).try_into().unwrap());
+            for i in 0..iters {
+                let buffer = [i as u8];
+                push(&mut p, &buffer);
+            }
+            let barrier = Arc::new(Barrier::new(3));
+            let push_thread = {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let start_pushing = std::time::Instant::now();
+                    let mut sent_i = iters;
+                    while sent_i < 2 * iters {
+                        let buffer: [u8; 3] = std::array::from_fn(|x| (sent_i + x as u64) as u8);
+                        let remainder = black_box(push(&mut p, black_box(&buffer)));
+                        assert!(remainder.is_empty());
+                        for i in buffer {
+                            // This is to compensate for the assertions in the main thread:
+                            assert_eq!(i, black_box(sent_i as u8));
+                            sent_i += 1;
+                        }
+                    }
+                    let stop_pushing = std::time::Instant::now();
+                    (start_pushing, stop_pushing)
+                })
+            };
+            let trigger_thread = {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    // Try to force other threads to go to sleep on barrier.
+                    std::thread::yield_now();
+                    std::thread::yield_now();
+                    std::thread::yield_now();
+                    barrier.wait();
+                    // Hopefully, the other two threads now wake up at the same time.
+                })
+            };
+            barrier.wait();
+            let start_popping = std::time::Instant::now();
+            let mut expected_i = 0;
+            while expected_i < iters {
+                    let mut buffer = [0u8; 3];
+                    let popped = black_box(pop(&mut c, black_box(&mut buffer)));
+                    for i in popped {
+                        assert_eq!(*i, expected_i as u8);
+                        expected_i += 1;
+                    }
+            }
+            let stop_popping = std::time::Instant::now();
+            let (start_pushing, stop_pushing) = push_thread.join().unwrap();
+            trigger_thread.join().unwrap();
+            let total = stop_pushing
+                .max(stop_popping)
+                .duration_since(start_pushing.min(start_popping));
+
+            /*
+            if start_pushing < start_popping {
+                println!(
+                    "popping started {:?} after pushing",
+                    start_popping.duration_since(start_pushing)
+                );
+            } else {
+                println!(
+                    "pushing started {:?} after popping",
+                    start_pushing.duration_since(start_popping)
+                );
+            }
+            */
+
+            // The goal is that both threads are finished at around the same time.
+            // This can be checked with the following output.
+            /*
+            if stop_pushing < stop_popping {
+                let diff = stop_popping.duration_since(stop_pushing);
+                println!(
+                    "popping stopped {diff:?} after pushing ({:.1}% of total time)",
+                    (diff.as_secs_f64() / total.as_secs_f64()) * 100.0
+                );
+            } else {
+                let diff = stop_pushing.duration_since(stop_popping);
+                println!(
+                    "pushing stopped {diff:?} after popping ({:.1}% of total time)",
+                    (diff.as_secs_f64() / total.as_secs_f64()) * 100.0
+                );
+            }
+            */
+
+            #[allow(clippy::let_and_return)]
+            total
+        });
+    });
+)+
+    group_large.finish();
 
     let queue_sizes = [4096];
 
