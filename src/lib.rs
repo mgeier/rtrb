@@ -362,6 +362,17 @@ impl<T> Producer<T> {
         self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
     }
 
+    /// Returns the number of cached slots.
+    ///
+    /// In many cases, this will not provide all available slots,
+    /// but it might be marginally faster than [`Producer::slots()`]
+    /// because it doesn't access the atomic read index.
+    pub fn cached_slots(&self) -> usize {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        self.buffer.capacity - self.buffer.distance(head, tail)
+    }
+
     /// Returns `true` if there are currently no slots available for writing.
     ///
     /// A full ring buffer might cease to be full at any time
@@ -628,6 +639,17 @@ impl<T> Consumer<T> {
         let tail = self.buffer.tail.load(Ordering::Acquire);
         self.cached_tail.set(tail);
         self.buffer.distance(self.cached_head.get(), tail)
+    }
+
+    /// Returns the number of cached slots.
+    ///
+    /// In many cases, this will not provide all available slots,
+    /// but it might be marginally faster than [`Consumer::slots()`]
+    /// because it doesn't access the atomic write index.
+    pub fn cached_slots(&self) -> usize {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        self.buffer.distance(head, tail)
     }
 
     /// Returns `true` if there are currently no slots available for reading.
