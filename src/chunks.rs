@@ -14,8 +14,8 @@
 //! Immutable access to the slots of the chunk can be obtained with [`ReadChunk::as_slices()`].
 //!
 //! If the item type `T` implements [`Copy`], the convenience functions
-//! [`Producer::push_slice()`], [`Consumer::pop_slice()`]
-//! and [`Consumer::pop_slice_uninit()`] can be used.
+//! [`Producer::push_partial_slice()`], [`Consumer::pop_partial_slice()`]
+//! and [`Consumer::pop_partial_slice_uninit()`] can be used.
 //!
 //! # Examples
 //!
@@ -23,8 +23,8 @@
 //! `producer` and `consumer` would of course live on different threads:
 //!
 //! If the trait bound `T: Copy` is satisfied,
-//! [`Producer::push_slice()`] and [`Consumer::pop_slice()`]
-//! (and [`Consumer::pop_slice_uninit()`]) can be used.
+//! [`Producer::push_partial_slice()`] and [`Consumer::pop_partial_slice()`]
+//! (and [`Consumer::pop_partial_slice_uninit()`]) can be used.
 //!
 //! ```
 //! use rtrb::RingBuffer;
@@ -32,17 +32,17 @@
 //! let (mut producer, mut consumer) = RingBuffer::new(4);
 //!
 //! let source = vec![1, 2, 3, 4, 5, 6];
-//! let (pushed, remainder) = producer.push_slice(&source);
+//! let (pushed, remainder) = producer.push_partial_slice(&source);
 //! assert_eq!(pushed, [1, 2, 3, 4]);
 //! assert_eq!(remainder, [5, 6]);
 //!
 //! let mut destination = vec![0; 3];
-//! let (popped, remainder) = consumer.pop_slice(&mut destination);
+//! let (popped, remainder) = consumer.pop_partial_slice(&mut destination);
 //! assert_eq!(popped, [1, 2, 3]);
 //! assert_eq!(remainder, []);
 //! assert_eq!(destination, [1, 2, 3]);
 //!
-//! let (popped, remainder) = consumer.pop_slice(&mut destination);
+//! let (popped, remainder) = consumer.pop_partial_slice(&mut destination);
 //! assert_eq!(popped, [4]);
 //! assert_eq!(remainder, [2, 3]);
 //! // The returned slices are mutable sub-slices into `destination`.
@@ -261,14 +261,14 @@ impl<T: Copy> Producer<T> {
     ///     p: &mut Producer<i32>,
     ///     s: &'a [i32],
     /// ) -> Result<&'a [i32], &'a [i32]> {
-    ///     match p.push_slice(s) {
+    ///     match p.push_partial_slice(s) {
     ///         ([], remainder) => Err(remainder),
     ///         (_, remainder) => Ok(remainder),
     ///     }
     /// }
     ///
     /// fn block_while_pushing_entire_slice(p: &mut Producer<i32>, mut s: &[i32]) {
-    ///     while let (_, remainder @ [_, ..]) = p.push_slice(s) {
+    ///     while let (_, remainder @ [_, ..]) = p.push_partial_slice(s) {
     ///         std::thread::yield_now();
     ///         s = remainder;
     ///     }
@@ -276,7 +276,7 @@ impl<T: Copy> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn push_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
         use ChunkError::TooFewSlots;
         let mut chunk = match self.write_chunk_uninit(slice.len()) {
             Ok(chunk) => chunk,
@@ -364,14 +364,14 @@ impl<T: Copy> Consumer<T> {
     ///     c: &mut Consumer<i32>,
     ///     s: &'a mut [i32],
     /// ) -> Result<&'a mut [i32], &'a mut [i32]> {
-    ///     match c.pop_slice(s) {
+    ///     match c.pop_partial_slice(s) {
     ///         ([], remainder) => Err(remainder),
     ///         (_, remainder) => Ok(remainder),
     ///     }
     /// }
     ///
     /// fn block_while_popping_entire_slice(c: &mut Consumer<i32>, mut s: &mut [i32]) {
-    ///     while let (_, remainder @ [_, ..]) = c.pop_slice(s) {
+    ///     while let (_, remainder @ [_, ..]) = c.pop_partial_slice(s) {
     ///         std::thread::yield_now();
     ///         s = remainder;
     ///     }
@@ -379,12 +379,12 @@ impl<T: Copy> Consumer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn pop_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
+    pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
         // and the reference never leaves our control, it should be fine.
         let (popped, remainder) =
-            unsafe { self.pop_slice_uninit(&mut *(slice as *mut [T] as *mut _)) };
+            unsafe { self.pop_partial_slice_uninit(&mut *(slice as *mut [T] as *mut _)) };
         // NB: This can be replaced by `assume_init_mut()` once stabilized:
         // SAFETY: `remainder` is a subslice of the original initialized buffer.
         (popped, unsafe { &mut *(remainder as *mut _ as *mut [T]) })
@@ -412,7 +412,7 @@ impl<T: Copy> Consumer<T> {
     ///     c: &mut Consumer<i32>,
     ///     s: &'a mut [MaybeUninit<i32>],
     /// ) -> Result<&'a mut [MaybeUninit<i32>], &'a mut [MaybeUninit<i32>]> {
-    ///     match c.pop_slice_uninit(s) {
+    ///     match c.pop_partial_slice_uninit(s) {
     ///         ([], remainder) => Err(remainder),
     ///         (_, remainder) => Ok(remainder),
     ///     }
@@ -422,7 +422,7 @@ impl<T: Copy> Consumer<T> {
     ///     c: &mut Consumer<i32>,
     ///     mut s: &mut [MaybeUninit<i32>],
     /// ) {
-    ///     while let (_, remainder @ [_, ..]) = c.pop_slice_uninit(s) {
+    ///     while let (_, remainder @ [_, ..]) = c.pop_partial_slice_uninit(s) {
     ///         std::thread::yield_now();
     ///         s = remainder;
     ///     }
@@ -438,11 +438,11 @@ impl<T: Copy> Consumer<T> {
     /// use rtrb::RingBuffer;
     ///
     /// let (mut producer, mut consumer) = RingBuffer::new(4);
-    /// let (_, remainder) = producer.push_slice(&[1, 2, 3]);
+    /// let (_, remainder) = producer.push_partial_slice(&[1, 2, 3]);
     /// assert!(remainder.is_empty());
     /// let mut buffer = Vec::with_capacity(5);
     /// let buffer_uninit = buffer.spare_capacity_mut();
-    /// let (popped, remainder) = consumer.pop_slice_uninit(buffer_uninit);
+    /// let (popped, remainder) = consumer.pop_partial_slice_uninit(buffer_uninit);
     /// assert_eq!(popped, [1, 2, 3]);
     /// // The returned slices are mutable ...
     /// popped[0] = -42;
@@ -457,7 +457,7 @@ impl<T: Copy> Consumer<T> {
     /// }
     /// assert_eq!(buffer, [-42, 2, 3, 99]);
     /// ```
-    pub fn pop_slice_uninit<'a>(
+    pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
     ) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
@@ -1011,7 +1011,7 @@ impl std::io::Write for Producer<u8> {
         if buf.is_empty() {
             return Ok(0);
         }
-        match self.push_slice(buf) {
+        match self.push_partial_slice(buf) {
             ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
             (pushed, _) => Ok(pushed.len()),
         }
@@ -1031,7 +1031,7 @@ impl std::io::Read for Consumer<u8> {
         if buf.is_empty() {
             return Ok(0);
         }
-        match self.pop_slice(buf) {
+        match self.pop_partial_slice(buf) {
             ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
             (popped, _) => Ok(popped.len()),
         }

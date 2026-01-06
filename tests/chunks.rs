@@ -180,34 +180,34 @@ fn trait_impls() {
 }
 
 #[test]
-fn push_pop_slice() {
+fn push_pop_partial_slice() {
     let mut buf = [0; 16];
     let (mut p, mut c) = RingBuffer::<u8>::new(8);
 
-    let (pushed, rest) = p.push_slice(&[1, 2, 3]);
+    let (pushed, rest) = p.push_partial_slice(&[1, 2, 3]);
     assert_eq!(pushed, [1, 2, 3]);
     assert_eq!(rest.len(), 0);
-    let (pushed, _) = p.push_slice(&[4, 5]);
+    let (pushed, _) = p.push_partial_slice(&[4, 5]);
     assert_eq!(pushed, &[4, 5]);
 
     let buf_len = buf.len();
-    let (popped, unused) = c.pop_slice(&mut buf);
+    let (popped, unused) = c.pop_partial_slice(&mut buf);
     assert_eq!(popped, &[1, 2, 3, 4, 5]);
     assert_eq!(unused.len(), buf_len - popped.len());
-    p.push_slice(popped);
+    p.push_partial_slice(popped);
 
-    let (pushed, rest) = p.push_slice(&[1, 2, 3, 4, 5]);
+    let (pushed, rest) = p.push_partial_slice(&[1, 2, 3, 4, 5]);
     assert_eq!(pushed, &[1, 2, 3]);
     assert_eq!(rest, &[4, 5]);
 
-    let (popped, unused) = c.pop_slice(&mut buf);
+    let (popped, unused) = c.pop_partial_slice(&mut buf);
     assert_eq!(popped, &[1, 2, 3, 4, 5, 1, 2, 3]);
     assert_eq!(unused.len(), buf_len - popped.len());
-    let (pushed, _) = p.push_slice(popped);
+    let (pushed, _) = p.push_partial_slice(popped);
     assert_eq!(pushed.len(), 8);
 
     let mut short_buf = [0; 3];
-    let (popped, unused) = c.pop_slice(&mut short_buf);
+    let (popped, unused) = c.pop_partial_slice(&mut short_buf);
     assert_eq!(unused.len(), 0);
     assert_eq!(popped, &[1, 2, 3]);
 }

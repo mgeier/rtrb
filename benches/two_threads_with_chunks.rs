@@ -287,9 +287,9 @@ create_two_threads_with_chunks_benchmark!(
         _ => &[],
     },
     ::
-    "push_slice-pop_slice",
+    "push_partial_slice-pop_partial_slice",
     rtrb::RingBuffer::new,
-    |p, s| p.push_slice(s).1,
-    |c, s| c.pop_slice(s).0,
+    |p, s| p.push_partial_slice(s).1,
+    |c, s| c.pop_partial_slice(s).0,
     ::
 );
