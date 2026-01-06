@@ -79,16 +79,7 @@
 //! assert_eq!(consumer.peek(), Ok(&12));
 //!
 //! let data = vec![20, 21, 22, 23];
-//! // NB: write_chunk_uninit() could be used for possibly better performance:
-//! if let Ok(mut chunk) = producer.write_chunk(4) {
-//!     let (first, second) = chunk.as_mut_slices();
-//!     let mid = first.len();
-//!     first.copy_from_slice(&data[..mid]);
-//!     second.copy_from_slice(&data[mid..]);
-//!     chunk.commit_all();
-//! } else {
-//!     unreachable!();
-//! }
+//! producer.push_entire_slice(&data).unwrap();
 //!
 //! assert!(producer.is_full());
 //! assert_eq!(consumer.slots(), 5);

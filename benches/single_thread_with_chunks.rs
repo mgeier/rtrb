@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use criterion::{criterion_group, criterion_main};
 use criterion::{AxisScale, PlotConfiguration};
 
-use rtrb::{CopyToUninit, RingBuffer};
+use rtrb::RingBuffer;
 
 const CHUNK_SIZE: usize = 64;
 
@@ -41,17 +41,13 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
     add_function(&mut group, "2-slice-read", |data| {
         let mut result = [0; CHUNK_SIZE];
         let _ = p.write(data).unwrap();
-        let chunk = c.read_chunk(data.len()).unwrap();
-        let (first, second) = chunk.as_slices();
-        let mid = first.len();
-        result[..mid].copy_from_slice(first);
-        result[mid..].copy_from_slice(second);
-        chunk.commit_all();
+        c.pop_entire_slice(&mut result).unwrap();
         result
     });
 
     add_function(&mut group, "2-slice-write", |data| {
         let mut result = [0; CHUNK_SIZE];
+        // There is no convenience method for this, push_entire_slice() can be used.
         let mut chunk = p.write_chunk(data.len()).unwrap();
         let (first, second) = chunk.as_mut_slices();
         let mid = first.len();
@@ -64,14 +60,7 @@ pub fn criterion_benchmark(criterion: &mut criterion::Criterion) {
 
     add_function(&mut group, "2-slice-write-uninit", |data| {
         let mut result = [0; CHUNK_SIZE];
-        let mut chunk = p.write_chunk_uninit(data.len()).unwrap();
-        let (first, second) = chunk.as_mut_slices();
-        let mid = first.len();
-        data[..mid].copy_to_uninit(first);
-        data[mid..].copy_to_uninit(second);
-        unsafe {
-            chunk.commit_all();
-        }
+        p.push_entire_slice(data).unwrap();
         let _ = c.read(&mut result).unwrap();
         result
     });
