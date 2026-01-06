@@ -270,17 +270,18 @@ impl<T: Copy> Producer<T> {
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
     pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
-        let (pushed, remainder) = if self.cached_slots() < slice.len() {
-            let slots = self.slots();
-            if slots < slice.len() {
-                slice.split_at(slots)
-            } else {
-                (slice, &[][..])
-            }
+        let slots = if self.cached_slots() < slice.len() {
+            slice.len().min(self.slots())
         } else {
-            (slice, &[][..])
+            slice.len()
         };
-        self.push_entire_slice(pushed).unwrap();
+        let (pushed, remainder) = slice.split_at(slots);
+        // With MSRV 1.58, unwrap_unchecked() can be used.
+        match self.push_entire_slice(pushed) {
+            Ok(()) => {}
+            // SAFETY: The requested slots are available.
+            Err(_) => unsafe { core::hint::unreachable_unchecked() },
+        };
         (pushed, remainder)
     }
 
@@ -476,21 +477,23 @@ impl<T: Copy> Consumer<T> {
     /// }
     /// assert_eq!(buffer, [-42, 2, 3, 99]);
     /// ```
+    #[inline]
     pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
     ) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
-        let (popped, remainder) = if self.cached_slots() < slice.len() {
-            let slots = self.slots();
-            if slots < slice.len() {
-                slice.split_at_mut(slots)
-            } else {
-                (slice, &mut [][..])
-            }
+        let slots = if self.cached_slots() < slice.len() {
+            slice.len().min(self.slots())
         } else {
-            (slice, &mut [][..])
+            slice.len()
         };
-        let popped = self.pop_entire_slice_uninit(popped).unwrap();
+        let (buffer, remainder) = slice.split_at_mut(slots);
+        // With MSRV 1.58, unwrap_unchecked() can be used.
+        let popped = match self.pop_entire_slice_uninit(buffer) {
+            Ok(popped) => popped,
+            // SAFETY: The requested slots are available.
+            Err(_) => unsafe { core::hint::unreachable_unchecked() },
+        };
         (popped, remainder)
     }
 
