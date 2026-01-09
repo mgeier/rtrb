@@ -75,19 +75,17 @@ a benchmark function (e.g. `large`):
 
     cargo flamegraph --bench two_threads -- --bench --profile-time 10 large
 
-To measure code coverage, nightly Rust is required, as well as a few additional dependencies:
+To measure code coverage (including branch coverage), nightly Rust is required,
+as well as [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov):
 
     rustup toolchain install nightly
-    rustup component add llvm-tools-preview
-    cargo install grcov
+    cargo install cargo-llvm-cov
 
-Test coverage data can be obtained and analyzed with these commands:
+Test coverage data can be obtained and analyzed with this command:
 
-    cargo clean
-    RUSTFLAGS="-Z instrument-coverage" RUSTDOCFLAGS="-Z instrument-coverage -Z unstable-options --persist-doctests target/debug/doctestbins" LLVM_PROFILE_FILE="coverage/%p-%m.profraw" cargo +nightly test
-    grcov coverage --source-dir . --binary-path target/debug --output-type html --output-path coverage
+    cargo +nightly llvm-cov --branch --doctests --html
 
-The last command creates an HTML report in `coverage/index.html`.
+This runs the tests (incl. doctests) and creates an HTML report in `target/llvm-cov/html/index.html`.
 
 Testing with Miri also needs nightly Rust:
 
