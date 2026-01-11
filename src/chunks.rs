@@ -14,8 +14,8 @@
 //! Immutable access to the slots of the chunk can be obtained with [`ReadChunk::as_slices()`].
 //!
 //! If the item type `T` implements [`Copy`], the convenience functions
-//! [`Producer::push_slice()`], [`Consumer::pop_slice()`]
-//! and [`Consumer::pop_slice_uninit()`] can be used.
+//! [`Producer::push_partial_slice()`], [`Consumer::pop_partial_slice()`]
+//! and [`Consumer::pop_partial_slice_uninit()`] can be used.
 //!
 //! # Examples
 //!
@@ -23,8 +23,8 @@
 //! `producer` and `consumer` would of course live on different threads:
 //!
 //! If the trait bound `T: Copy` is satisfied,
-//! [`Producer::push_slice()`] and [`Consumer::pop_slice()`]
-//! (and [`Consumer::pop_slice_uninit()`]) can be used.
+//! [`Producer::push_partial_slice()`] and [`Consumer::pop_partial_slice()`]
+//! (and [`Consumer::pop_partial_slice_uninit()`]) can be used.
 //!
 //! ```
 //! use rtrb::RingBuffer;
@@ -32,17 +32,17 @@
 //! let (mut producer, mut consumer) = RingBuffer::new(4);
 //!
 //! let source = vec![1, 2, 3, 4, 5, 6];
-//! let (pushed, remainder) = producer.push_slice(&source);
+//! let (pushed, remainder) = producer.push_partial_slice(&source);
 //! assert_eq!(pushed, [1, 2, 3, 4]);
 //! assert_eq!(remainder, [5, 6]);
 //!
 //! let mut destination = vec![0; 3];
-//! let (popped, remainder) = consumer.pop_slice(&mut destination);
+//! let (popped, remainder) = consumer.pop_partial_slice(&mut destination);
 //! assert_eq!(popped, [1, 2, 3]);
 //! assert_eq!(remainder, []);
 //! assert_eq!(destination, [1, 2, 3]);
 //!
-//! let (popped, remainder) = consumer.pop_slice(&mut destination);
+//! let (popped, remainder) = consumer.pop_partial_slice(&mut destination);
 //! assert_eq!(popped, [4]);
 //! assert_eq!(remainder, [2, 3]);
 //! // The returned slices are mutable sub-slices into `destination`.
@@ -79,16 +79,7 @@
 //! assert_eq!(consumer.peek(), Ok(&12));
 //!
 //! let data = vec![20, 21, 22, 23];
-//! // NB: write_chunk_uninit() could be used for possibly better performance:
-//! if let Ok(mut chunk) = producer.write_chunk(4) {
-//!     let (first, second) = chunk.as_mut_slices();
-//!     let mid = first.len();
-//!     first.copy_from_slice(&data[..mid]);
-//!     second.copy_from_slice(&data[mid..]);
-//!     chunk.commit_all();
-//! } else {
-//!     unreachable!();
-//! }
+//! producer.push_entire_slice(&data).unwrap();
 //!
 //! assert!(producer.is_full());
 //! assert_eq!(consumer.slots(), 5);
@@ -252,6 +243,8 @@ impl<T: Copy> Producer<T> {
     /// - The part that has been copied into the ring buffer (possibly empty).
     /// - The unused remainder (possibly empty).
     ///
+    /// To copy an entire slice (and fail otherwise), [`Producer::push_entire_slice()`] can be used.
+    ///
     /// # Examples
     ///
     /// ```
@@ -261,14 +254,14 @@ impl<T: Copy> Producer<T> {
     ///     p: &mut Producer<i32>,
     ///     s: &'a [i32],
     /// ) -> Result<&'a [i32], &'a [i32]> {
-    ///     match p.push_slice(s) {
+    ///     match p.push_partial_slice(s) {
     ///         ([], remainder) => Err(remainder),
     ///         (_, remainder) => Ok(remainder),
     ///     }
     /// }
     ///
     /// fn block_while_pushing_entire_slice(p: &mut Producer<i32>, mut s: &[i32]) {
-    ///     while let (_, remainder @ [_, ..]) = p.push_slice(s) {
+    ///     while let (_, remainder @ [_, ..]) = p.push_partial_slice(s) {
     ///         std::thread::yield_now();
     ///         s = remainder;
     ///     }
@@ -276,22 +269,42 @@ impl<T: Copy> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn push_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
-        use ChunkError::TooFewSlots;
-        let mut chunk = match self.write_chunk_uninit(slice.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return (&[], slice),
-            Err(TooFewSlots(n)) => self.write_chunk_uninit(n).unwrap(),
+    pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
+        let slots = if self.cached_slots() < slice.len() {
+            slice.len().min(self.slots())
+        } else {
+            slice.len()
         };
-        let end = chunk.len();
-        let (first, second) = chunk.as_mut_slices();
-        let mid = first.len();
+        let (pushed, remainder) = slice.split_at(slots);
+        // With MSRV 1.58, unwrap_unchecked() can be used.
+        match self.push_entire_slice(pushed) {
+            Ok(()) => {}
+            // SAFETY: The requested slots are available.
+            Err(_) => unsafe { core::hint::unreachable_unchecked() },
+        };
+        (pushed, remainder)
+    }
+
+    /// Copies all items from the given `slice` into the ring buffer.
+    ///
+    /// The written slots are automatically made available to be read by the [`Consumer`].
+    ///
+    /// To copy only into the available slots, [`Producer::push_partial_slice()`] can be used.
+    ///
+    /// # Errors
+    ///
+    /// If not enough free space is available in the ring buffer,
+    /// a [`ChunkError`] with the available slots is returned.
+    pub fn push_entire_slice(&mut self, slice: &[T]) -> Result<(), ChunkError> {
+        let mut chunk = self.write_chunk_uninit(slice.len())?;
+        let (one, two) = chunk.as_mut_slices();
+        let mid = one.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        slice[..mid].copy_to_uninit(first);
-        slice[mid..end].copy_to_uninit(second);
+        slice[..mid].copy_to_uninit(one);
+        slice[mid..].copy_to_uninit(two);
         // SAFETY: All slots have been initialized
         unsafe { chunk.commit_all() };
-        slice.split_at(end)
+        Ok(())
     }
 }
 
@@ -355,6 +368,9 @@ impl<T: Copy> Consumer<T> {
     /// - The part that has been filled with data from the ring buffer (possibly empty).
     /// - The unused remainder (possibly empty).
     ///
+    /// To copy an entire slice (and fail otherwise), [`Consumer::pop_entire_slice()`] can be used.
+    /// To copy into an uninitialized slice, [`Consumer::pop_partial_slice_uninit()`] can be used.
+    ///
     /// # Examples
     ///
     /// ```
@@ -364,14 +380,14 @@ impl<T: Copy> Consumer<T> {
     ///     c: &mut Consumer<i32>,
     ///     s: &'a mut [i32],
     /// ) -> Result<&'a mut [i32], &'a mut [i32]> {
-    ///     match c.pop_slice(s) {
+    ///     match c.pop_partial_slice(s) {
     ///         ([], remainder) => Err(remainder),
     ///         (_, remainder) => Ok(remainder),
     ///     }
     /// }
     ///
     /// fn block_while_popping_entire_slice(c: &mut Consumer<i32>, mut s: &mut [i32]) {
-    ///     while let (_, remainder @ [_, ..]) = c.pop_slice(s) {
+    ///     while let (_, remainder @ [_, ..]) = c.pop_partial_slice(s) {
     ///         std::thread::yield_now();
     ///         s = remainder;
     ///     }
@@ -379,15 +395,15 @@ impl<T: Copy> Consumer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
-    pub fn pop_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
+    pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
         // and the reference never leaves our control, it should be fine.
         let (popped, remainder) =
-            unsafe { self.pop_slice_uninit(&mut *(slice as *mut [T] as *mut _)) };
+            unsafe { self.pop_partial_slice_uninit(&mut *(slice as *mut [_] as *mut _)) };
         // NB: This can be replaced by `assume_init_mut()` once stabilized:
         // SAFETY: `remainder` is a subslice of the original initialized buffer.
-        (popped, unsafe { &mut *(remainder as *mut _ as *mut [T]) })
+        (popped, unsafe { &mut *(remainder as *mut _ as *mut [_]) })
     }
 
     /// Copies as many items as possible from the ring buffer to the given uninitialized `slice`.
@@ -401,6 +417,10 @@ impl<T: Copy> Consumer<T> {
     /// The first of the returned slices has been initialized,
     /// while the second one remains uninitialized.
     ///
+    /// To copy an entire slice (and fail otherwise),
+    /// [`Consumer::pop_entire_slice_uninit()`] can be used.
+    /// To copy into an initialized slice, [`Consumer::pop_partial_slice()`] can be used.
+    ///
     /// # Examples
     ///
     /// ```
@@ -412,7 +432,7 @@ impl<T: Copy> Consumer<T> {
     ///     c: &mut Consumer<i32>,
     ///     s: &'a mut [MaybeUninit<i32>],
     /// ) -> Result<&'a mut [MaybeUninit<i32>], &'a mut [MaybeUninit<i32>]> {
-    ///     match c.pop_slice_uninit(s) {
+    ///     match c.pop_partial_slice_uninit(s) {
     ///         ([], remainder) => Err(remainder),
     ///         (_, remainder) => Ok(remainder),
     ///     }
@@ -422,7 +442,7 @@ impl<T: Copy> Consumer<T> {
     ///     c: &mut Consumer<i32>,
     ///     mut s: &mut [MaybeUninit<i32>],
     /// ) {
-    ///     while let (_, remainder @ [_, ..]) = c.pop_slice_uninit(s) {
+    ///     while let (_, remainder @ [_, ..]) = c.pop_partial_slice_uninit(s) {
     ///         std::thread::yield_now();
     ///         s = remainder;
     ///     }
@@ -438,11 +458,11 @@ impl<T: Copy> Consumer<T> {
     /// use rtrb::RingBuffer;
     ///
     /// let (mut producer, mut consumer) = RingBuffer::new(4);
-    /// let (_, remainder) = producer.push_slice(&[1, 2, 3]);
+    /// let (_, remainder) = producer.push_partial_slice(&[1, 2, 3]);
     /// assert!(remainder.is_empty());
     /// let mut buffer = Vec::with_capacity(5);
     /// let buffer_uninit = buffer.spare_capacity_mut();
-    /// let (popped, remainder) = consumer.pop_slice_uninit(buffer_uninit);
+    /// let (popped, remainder) = consumer.pop_partial_slice_uninit(buffer_uninit);
     /// assert_eq!(popped, [1, 2, 3]);
     /// // The returned slices are mutable ...
     /// popped[0] = -42;
@@ -457,27 +477,72 @@ impl<T: Copy> Consumer<T> {
     /// }
     /// assert_eq!(buffer, [-42, 2, 3, 99]);
     /// ```
-    pub fn pop_slice_uninit<'a>(
+    #[inline]
+    pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
     ) -> (&'a mut [T], &'a mut [MaybeUninit<T>]) {
-        use ChunkError::TooFewSlots;
-        let chunk = match self.read_chunk(slice.len()) {
-            Ok(chunk) => chunk,
-            Err(TooFewSlots(0)) => return (&mut [], slice),
-            Err(TooFewSlots(n)) => self.read_chunk(n).unwrap(),
+        let slots = if self.cached_slots() < slice.len() {
+            slice.len().min(self.slots())
+        } else {
+            slice.len()
         };
-        let (first, second) = chunk.as_slices();
-        let mid = first.len();
-        let end = chunk.len();
+        let (buffer, remainder) = slice.split_at_mut(slots);
+        // With MSRV 1.58, unwrap_unchecked() can be used.
+        let popped = match self.pop_entire_slice_uninit(buffer) {
+            Ok(popped) => popped,
+            // SAFETY: The requested slots are available.
+            Err(_) => unsafe { core::hint::unreachable_unchecked() },
+        };
+        (popped, remainder)
+    }
+
+    /// Copies as many items from the ring buffer as to fill the given `slice`.
+    ///
+    /// The copied slots are automatically made available to be written again by the [`Producer`].
+    ///
+    /// # Errors
+    ///
+    /// If not enough data is available in the ring buffer, no items are copied and
+    /// a [`ChunkError`] with the available items is returned.
+    ///
+    /// To copy only the available slots, [`Consumer::pop_partial_slice()`] can be used.
+    /// To copy into an uninitialized slice, [`Consumer::pop_entire_slice_uninit()`] can be used.
+    pub fn pop_entire_slice(&mut self, slice: &mut [T]) -> Result<(), ChunkError> {
+        // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
+        // However, since we can guarantee that only valid T values will ever be written,
+        // and the reference never leaves our control, it should be fine.
+        let _ = unsafe { self.pop_entire_slice_uninit(&mut *(slice as *mut [_] as *mut _))? };
+        Ok(())
+    }
+
+    /// Copies as many items from the ring buffer as to fill the given uninitialized `slice`.
+    ///
+    /// The copied slots are automatically made available to be written again by the [`Producer`].
+    ///
+    /// Returns the given slice, but now initialized.
+    ///
+    /// # Errors
+    ///
+    /// If not enough data is available in the ring buffer, no items are copied and
+    /// a [`ChunkError`] with the available items is returned.
+    ///
+    /// To copy only the available slots, [`Consumer::pop_partial_slice_uninit()`] can be used.
+    /// To copy into an initialized slice, [`Consumer::pop_entire_slice()`] can be used.
+    pub fn pop_entire_slice_uninit<'a>(
+        &mut self,
+        slice: &'a mut [MaybeUninit<T>],
+    ) -> Result<&'a mut [T], ChunkError> {
+        let chunk = self.read_chunk(slice.len())?;
+        let (one, two) = chunk.as_slices();
+        let mid = one.len();
         // NB: If slice.is_empty(), chunk will be empty as well and the following are no-ops:
-        first.copy_to_uninit(&mut slice[..mid]);
-        second.copy_to_uninit(&mut slice[mid..end]);
+        one.copy_to_uninit(&mut slice[..mid]);
+        two.copy_to_uninit(&mut slice[mid..]);
         chunk.commit_all();
-        let (popped, remainder) = slice.split_at_mut(end);
         // NB: This can be replaced by `assume_init_mut()` once stabilized:
-        // SAFETY: `popped` (i.e. `slice[..end]`) has been initialized above.
-        (unsafe { &mut *(popped as *mut _ as *mut [T]) }, remainder)
+        // SAFETY: The entire `slice` has been initialized above.
+        Ok(unsafe { &mut *(slice as *mut _ as *mut [_]) })
     }
 }
 
@@ -1011,7 +1076,7 @@ impl std::io::Write for Producer<u8> {
         if buf.is_empty() {
             return Ok(0);
         }
-        match self.push_slice(buf) {
+        match self.push_partial_slice(buf) {
             ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
             (pushed, _) => Ok(pushed.len()),
         }
@@ -1031,15 +1096,16 @@ impl std::io::Read for Consumer<u8> {
         if buf.is_empty() {
             return Ok(0);
         }
-        match self.pop_slice(buf) {
+        match self.pop_partial_slice(buf) {
             ([], _) => Err(std::io::ErrorKind::WouldBlock.into()),
             (popped, _) => Ok(popped.len()),
         }
     }
 }
 
-/// Error type for [`Consumer::read_chunk()`], [`Producer::write_chunk()`]
-/// and [`Producer::write_chunk_uninit()`].
+/// Error type for [`Consumer::read_chunk()`], [`Consumer::pop_entire_slice()`],
+/// [`Consumer::pop_entire_slice_uninit()`], [`Producer::write_chunk()`],
+/// [`Producer::write_chunk_uninit()`] and [`Producer::push_entire_slice()`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ChunkError {
     /// Fewer than the requested number of slots were available.

@@ -44,13 +44,13 @@
 //!
 //!   * [`Producer::write_chunk()`]
 //!   * [`Producer::write_chunk_uninit()`]
-//!   * [`Producer::push_slice()`] (if `T: Copy`)
+//!   * [`Producer::push_partial_slice()`] (if `T: Copy`)
 //!
 //! ... and read multiple items at once with ...
 //!
 //!   * [`Consumer::read_chunk()`]
-//!   * [`Consumer::pop_slice()`] (if `T: Copy`)
-//!   * [`Consumer::pop_slice_uninit()`] (if `T: Copy`)
+//!   * [`Consumer::pop_partial_slice()`] (if `T: Copy`)
+//!   * [`Consumer::pop_partial_slice_uninit()`] (if `T: Copy`)
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(rust_2018_idioms)]
 #![deny(missing_docs, missing_debug_implementations)]
@@ -273,7 +273,7 @@ impl<T> Eq for RingBuffer<T> {}
 ///
 /// Individual elements can be moved into the ring buffer with [`Producer::push()`],
 /// multiple elements at once can be written with [`Producer::write_chunk()`],
-/// [`Producer::write_chunk_uninit()`] and [`Producer::push_slice()`].
+/// [`Producer::write_chunk_uninit()`] and [`Producer::push_partial_slice()`].
 ///
 /// The number of free slots currently available for writing can be obtained with
 /// [`Producer::slots()`].
@@ -360,6 +360,17 @@ impl<T> Producer<T> {
         let head = self.buffer.head.load(Ordering::Acquire);
         self.cached_head.set(head);
         self.buffer.capacity - self.buffer.distance(head, self.cached_tail.get())
+    }
+
+    /// Returns the number of cached slots.
+    ///
+    /// In many cases, this will not provide all available slots,
+    /// but it might be marginally faster than [`Producer::slots()`]
+    /// because it doesn't access the atomic read index.
+    pub fn cached_slots(&self) -> usize {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        self.buffer.capacity - self.buffer.distance(head, tail)
     }
 
     /// Returns `true` if there are currently no slots available for writing.
@@ -488,7 +499,7 @@ impl<T> Producer<T> {
 ///
 /// Individual elements can be moved out of the ring buffer with [`Consumer::pop()`],
 /// multiple elements at once can be read with [`Consumer::read_chunk()`],
-/// [`Consumer::pop_slice()`] and [`Consumer::pop_slice_uninit()`].
+/// [`Consumer::pop_partial_slice()`] and [`Consumer::pop_partial_slice_uninit()`].
 ///
 /// The number of slots currently available for reading can be obtained with
 /// [`Consumer::slots()`].
@@ -628,6 +639,17 @@ impl<T> Consumer<T> {
         let tail = self.buffer.tail.load(Ordering::Acquire);
         self.cached_tail.set(tail);
         self.buffer.distance(self.cached_head.get(), tail)
+    }
+
+    /// Returns the number of cached slots.
+    ///
+    /// In many cases, this will not provide all available slots,
+    /// but it might be marginally faster than [`Consumer::slots()`]
+    /// because it doesn't access the atomic write index.
+    pub fn cached_slots(&self) -> usize {
+        let head = self.cached_head.get();
+        let tail = self.cached_tail.get();
+        self.buffer.distance(head, tail)
     }
 
     /// Returns `true` if there are currently no slots available for reading.
