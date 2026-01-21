@@ -1048,8 +1048,7 @@ pub enum ChunkError {
     TooFewSlots(usize),
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for ChunkError {}
+impl core::error::Error for ChunkError {}
 
 impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
