@@ -4,6 +4,8 @@ mod two_threads_with_chunks;
 
 use core::num::NonZeroUsize;
 
+use gil::read_guard::BatchReader;
+
 use ringbuf::traits::Consumer as _;
 use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
