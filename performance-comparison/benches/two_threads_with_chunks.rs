@@ -33,8 +33,8 @@ create_two_threads_with_chunks_benchmark!(
     ::
     "2-rtrb",
     rtrb::RingBuffer::new,
-    |p, s| p.push_slice(s).1,
-    |c, s| c.pop_slice(s).0,
+    |p, s| p.push_partial_slice(s).1,
+    |c, s| c.pop_partial_slice(s).0,
     ::
     "3-ringbuf",
     |capacity| ringbuf::HeapRb::new(capacity).split(),
