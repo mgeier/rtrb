@@ -144,3 +144,17 @@ jobs:
         # see https://github.com/google/sanitizers/issues/1415.
         run: |
           cargo test --tests -Z build-std --target x86_64-unknown-linux-gnu -- --skip no_race_with_is_abandoned
+
+  test-performance-comparison:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Git repository
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test benchmarks
+        working-directory: performance-comparison
+        run: |
+          cargo test --benches

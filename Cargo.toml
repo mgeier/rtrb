@@ -18,6 +18,9 @@ exclude = [
     ".*",
 ]
 
+[workspace]
+exclude = ["crossbeam", "performance-comparison"]
+
 [features]
 default = ["std"]
 std = []
