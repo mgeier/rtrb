@@ -1,4 +1,4 @@
-use rtrb::{chunks::ChunkError, RingBuffer};
+use rtrb::{ChunkError, RingBuffer};
 
 #[test]
 fn iterators() {
