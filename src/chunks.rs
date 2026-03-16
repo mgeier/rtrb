@@ -1033,27 +1033,27 @@ pub struct ReadChunkIntoIter<'a, T> {
 
 impl<T> ReadChunkIntoIter<'_, T> {
     /// Returns the number of items consumed from this iterator.
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// let (mut tx, mut rx) = rtrb::RingBuffer::new(10);
-    /// 
+    ///
     /// for i in 0..10 {
     ///     tx.push(i).unwrap();
     /// }
-    /// 
+    ///
     /// let mut chunk = rx.read_chunk(10).unwrap();
     /// let mut iter = chunk.into_iter();
-    /// 
+    ///
     /// assert_eq!(iter.iterated(), 0);
-    /// 
+    ///
     /// for _ in iter.by_ref().take(4) {}
-    /// 
+    ///
     /// assert_eq!(iter.iterated(), 4);
-    /// 
+    ///
     /// for _ in iter.by_ref() {}
-    /// 
+    ///
     /// assert_eq!(iter.iterated(), 10);
     /// ```
     #[inline]
