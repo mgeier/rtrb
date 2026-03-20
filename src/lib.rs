@@ -53,6 +53,12 @@
 //!   * [`Consumer::pop_partial_slice_uninit()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice()`] (if `T: Copy`)
 //!   * [`Consumer::pop_entire_slice_uninit()`] (if `T: Copy`)
+#![doc(
+    html_favicon_url = "https://raw.githubusercontent.com/mgeier-forks/rtrb/refs/heads/logo/favicon.svg"
+)]
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/mgeier-forks/rtrb/refs/heads/logo/rtrb-logo.svg"
+)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(rust_2018_idioms)]
 #![deny(missing_docs, missing_debug_implementations)]

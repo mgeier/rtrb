@@ -1,3 +1,5 @@
+![](rtrb-logo.svg)
+
 Real-Time Ring Buffer
 =====================
 
