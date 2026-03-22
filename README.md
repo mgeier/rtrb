@@ -1,4 +1,4 @@
-![](rtrb-logo.svg)
+![](https://raw.githubusercontent.com/mgeier/rtrb/refs/heads/main/rtrb-logo.svg)
 
 Real-Time Ring Buffer
 =====================
