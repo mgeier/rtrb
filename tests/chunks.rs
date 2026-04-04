@@ -194,7 +194,8 @@ fn push_pop_partial_slice() {
     let (popped, unused) = c.pop_partial_slice(&mut buf);
     assert_eq!(popped, &[1, 2, 3, 4, 5]);
     assert_eq!(unused.len(), buf_len - popped.len());
-    p.push_partial_slice(popped);
+    let (pushed, _) = p.push_partial_slice(popped);
+    assert_eq!(pushed.len(), 5);
 
     let (pushed, rest) = p.push_partial_slice(&[1, 2, 3, 4, 5]);
     assert_eq!(pushed, &[1, 2, 3]);

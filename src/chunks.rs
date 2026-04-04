@@ -277,6 +277,7 @@ impl<T: Copy> Producer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn push_partial_slice<'a>(&mut self, slice: &'a [T]) -> (&'a [T], &'a [T]) {
         let slots = if self.cached_slots() < slice.len() {
             slice.len().min(self.slots())
@@ -403,6 +404,7 @@ impl<T: Copy> Consumer<T> {
     /// ```
     ///
     /// For more examples, see the documentation of the [`chunks`](crate::chunks#examples) module.
+    #[must_use]
     pub fn pop_partial_slice<'a>(&mut self, slice: &'a mut [T]) -> (&'a mut [T], &'a mut [T]) {
         // SAFETY: Transmuting &mut [T] to &mut [MaybeUninit<T>] is generally unsafe!
         // However, since we can guarantee that only valid T values will ever be written,
@@ -486,6 +488,7 @@ impl<T: Copy> Consumer<T> {
     /// assert_eq!(buffer, [-42, 2, 3, 99]);
     /// ```
     #[inline]
+    #[must_use]
     pub fn pop_partial_slice_uninit<'a>(
         &mut self,
         slice: &'a mut [MaybeUninit<T>],
