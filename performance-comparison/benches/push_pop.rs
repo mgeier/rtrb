@@ -1,6 +1,6 @@
-#[path = "../../benches/two_threads.rs"]
+#[path = "../../benches/push_pop.rs"]
 #[macro_use]
-mod two_threads;
+mod push_pop;
 
 use core::num::NonZeroUsize;
 
@@ -8,7 +8,7 @@ use ringbuf::traits::Consumer as _;
 use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
 
-create_two_threads_benchmark!(
+create_push_pop_benchmark!(
     "0-rtrb",
     rtrb::RingBuffer::new,
     |p, i| p.push(i).is_ok(),
