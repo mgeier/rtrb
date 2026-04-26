@@ -819,8 +819,7 @@ pub enum PopError {
     Empty,
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for PopError {}
+impl core::error::Error for PopError {}
 
 impl fmt::Display for PopError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -837,8 +836,7 @@ pub enum PeekError {
     Empty,
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for PeekError {}
+impl core::error::Error for PeekError {}
 
 impl fmt::Display for PeekError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -855,8 +853,7 @@ pub enum PushError<T> {
     Full(T),
 }
 
-#[cfg(feature = "std")]
-impl<T> std::error::Error for PushError<T> {}
+impl<T> core::error::Error for PushError<T> {}
 
 impl<T> fmt::Debug for PushError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
