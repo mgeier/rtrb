@@ -37,6 +37,8 @@ $(
 )+
 
     let mut group_large = criterion.benchmark_group("chunks-large");
+    group_large.plot_config(criterion::PlotConfiguration::default()
+        .summary_scale(criterion::AxisScale::Logarithmic));
 $(
     group_large.bench_function($id, |b| {
         b.iter_custom(|iters| {

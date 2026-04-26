@@ -32,6 +32,8 @@ $(
 )+
 
     let mut group_large = criterion.benchmark_group("large");
+    group_large.plot_config(criterion::PlotConfiguration::default()
+        .summary_scale(criterion::AxisScale::Logarithmic));
     group_large.throughput(criterion::Throughput::Bytes(1));
 $(
     group_large.bench_function($id, |b| {
@@ -118,6 +120,8 @@ $(
     group_large.finish();
 
     let mut group_small = criterion.benchmark_group("small");
+    group_small.plot_config(criterion::PlotConfiguration::default()
+        .summary_scale(criterion::AxisScale::Logarithmic));
     group_small.throughput(criterion::Throughput::Bytes(1));
 $(
     group_small.bench_function($id, |b| {
