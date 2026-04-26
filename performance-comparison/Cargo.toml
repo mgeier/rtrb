@@ -33,13 +33,13 @@ codegen-units = 1
 bench = false # Don't disturb criterion command line parsing
 
 [[bench]]
-name = "two_threads"
+name = "chunks"
 harness = false
 
 [[bench]]
-name = "two_threads_with_chunks"
+name = "const_push_pop"
 harness = false
 
 [[bench]]
-name = "two_threads_const"
+name = "push_pop"
 harness = false

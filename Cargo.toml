@@ -41,6 +41,18 @@ codegen-units = 1
 bench = false # Don't disturb criterion command line parsing
 
 [[bench]]
+name = "chunks"
+harness = false
+
+[[bench]]
+name = "const_push_pop"
+harness = false
+
+[[bench]]
+name = "push_pop"
+harness = false
+
+[[bench]]
 name = "single_thread_single_byte"
 harness = false
 
@@ -50,16 +62,4 @@ harness = false
 
 [[bench]]
 name = "single_thread_with_chunks"
-harness = false
-
-[[bench]]
-name = "two_threads"
-harness = false
-
-[[bench]]
-name = "two_threads_with_chunks"
-harness = false
-
-[[bench]]
-name = "two_threads_const"
 harness = false
