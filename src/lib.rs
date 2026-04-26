@@ -67,19 +67,24 @@
 
 extern crate alloc;
 
-use alloc::sync::Arc;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::cell::Cell;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
 mod cache_padded;
 use cache_padded::CachePadded;
 
+const IS_ABANDONED: u8 = 0b10000000;
+
+mod arc_ring_buffer;
 pub mod chunks;
+
+use arc_ring_buffer::ArcRingBuffer;
 
 // This is used in the documentation.
 #[allow(unused_imports)]
@@ -102,6 +107,8 @@ pub struct RingBuffer<T> {
     ///
     /// This integer is in range `0 .. 2 * capacity`.
     tail: CachePadded<AtomicUsize>,
+
+    flags: AtomicU8,
 
     /// The buffer holding slots.
     data_ptr: *mut T,
@@ -136,24 +143,14 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
-        let buffer = Arc::new(RingBuffer {
+        ArcRingBuffer::new(Box::new(Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
+            flags: AtomicU8::new(0),
             data_ptr: ManuallyDrop::new(Vec::with_capacity(capacity)).as_mut_ptr(),
             capacity,
             _marker: PhantomData,
-        });
-        let p = Producer {
-            buffer: buffer.clone(),
-            cached_head: Cell::new(0),
-            cached_tail: Cell::new(0),
-        };
-        let c = Consumer {
-            buffer,
-            cached_head: Cell::new(0),
-            cached_tail: Cell::new(0),
-        };
-        (p, c)
+        }))
     }
 
     /// Returns the capacity of the queue.
@@ -294,7 +291,7 @@ impl<T> Eq for RingBuffer<T> {}
 #[derive(Debug, PartialEq, Eq)]
 pub struct Producer<T> {
     /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+    buffer: ArcRingBuffer<T>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -423,9 +420,10 @@ impl<T> Producer<T> {
 
     /// Returns `true` if the corresponding [`Consumer`] has been destroyed.
     ///
-    /// Note that since Rust version 1.74.0, this is not synchronizing with the consumer thread
-    /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
-    /// In a future version of `rtrb`, the synchronizing behavior might be restored.
+    /// Note that since Rust version 1.74.0 and before `rtrb` version 0.4,
+    /// this was not synchronizing with the consumer thread anymore,
+    /// see [issue #114](https://github.com/mgeier/rtrb/issues/114).
+    /// In `rtrb` version 0.4, the synchronizing behavior has been restored.
     ///
     /// # Examples
     ///
@@ -460,13 +458,11 @@ impl<T> Producer<T> {
     /// # use rtrb::RingBuffer;
     /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if p.is_abandoned() {
-    ///     // This is needed since Rust 1.74.0, see https://github.com/mgeier/rtrb/issues/114:
-    ///     std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
     ///     // The consumer does definitely not exist anymore.
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+        self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 
     /// Returns a read-only reference to the ring buffer.
@@ -520,7 +516,7 @@ impl<T> Producer<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Consumer<T> {
     /// A reference to the ring buffer.
-    buffer: Arc<RingBuffer<T>>,
+    buffer: ArcRingBuffer<T>,
 
     /// A copy of `buffer.head` for quick access.
     ///
@@ -702,9 +698,10 @@ impl<T> Consumer<T> {
 
     /// Returns `true` if the corresponding [`Producer`] has been destroyed.
     ///
-    /// Note that since Rust version 1.74.0, this is not synchronizing with the producer thread
-    /// anymore, see <https://github.com/mgeier/rtrb/issues/114>.
-    /// In a future version of `rtrb`, the synchronizing behavior might be restored.
+    /// Note that since Rust version 1.74.0 and before `rtrb` version 0.4,
+    /// this was not synchronizing with the consumer thread anymore,
+    /// see [issue #114](https://github.com/mgeier/rtrb/issues/114).
+    /// In `rtrb` version 0.4, the synchronizing behavior has been restored.
     ///
     /// # Examples
     ///
@@ -738,13 +735,11 @@ impl<T> Consumer<T> {
     /// # use rtrb::RingBuffer;
     /// # let (p, c) = RingBuffer::<i32>::new(1);
     /// if c.is_abandoned() {
-    ///     // This is needed since Rust 1.74.0, see https://github.com/mgeier/rtrb/issues/114:
-    ///     std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
     ///     // The producer does definitely not exist anymore.
     /// }
     /// ```
     pub fn is_abandoned(&self) -> bool {
-        Arc::strong_count(&self.buffer) < 2
+        self.buffer.flags.load(Ordering::Acquire) & IS_ABANDONED != 0
     }
 
     /// Returns a read-only reference to the ring buffer.
