@@ -1,6 +1,6 @@
 #![allow(clippy::incompatible_msrv)]
 
-macro_rules! create_two_threads_with_chunks_benchmark {
+macro_rules! create_chunks_benchmark {
     ($($id:literal, $create:expr, $push:expr, $pop:expr, ::)+) => {
 
 use std::convert::TryFrom as _;
@@ -36,7 +36,9 @@ $(
     assert_eq!(dst, [40, 20, 30]);
 )+
 
-    let mut group_large = criterion.benchmark_group("large-with-chunks");
+    let mut group_large = criterion.benchmark_group("chunks-large");
+    group_large.plot_config(criterion::PlotConfiguration::default()
+        .summary_scale(criterion::AxisScale::Logarithmic));
 $(
     group_large.bench_function($id, |b| {
         b.iter_custom(|iters| {
@@ -139,7 +141,7 @@ $(
 
     let queue_sizes = [4096];
 
-    let mut group_write_chunk = criterion.benchmark_group("eager-write-chunk");
+    let mut group_write_chunk = criterion.benchmark_group("chunks-eager-write");
     group_write_chunk.plot_config(criterion::PlotConfiguration::default()
         .summary_scale(criterion::AxisScale::Logarithmic));
 $(
@@ -209,7 +211,7 @@ $(
 )+
     group_write_chunk.finish();
 
-    let mut group_read_chunk = criterion.benchmark_group("eager-read-chunk");
+    let mut group_read_chunk = criterion.benchmark_group("chunks-eager-read");
     group_read_chunk.plot_config(criterion::PlotConfiguration::default()
         .summary_scale(criterion::AxisScale::Logarithmic));
 $(
@@ -275,7 +277,7 @@ criterion_main!(benches);
 
 use std::io::{Read as _, Write as _};
 
-create_two_threads_with_chunks_benchmark!(
+create_chunks_benchmark!(
     "write-read",
     rtrb::RingBuffer::new,
     |p, s| match p.write(s) {

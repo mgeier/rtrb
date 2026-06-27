@@ -1,14 +1,16 @@
-#[path = "../../benches/two_threads_with_chunks.rs"]
+#[path = "../../benches/chunks.rs"]
 #[macro_use]
-mod two_threads_with_chunks;
+mod chunks;
 
 use core::num::NonZeroUsize;
+
+use gil::read_guard::BatchReader;
 
 use ringbuf::traits::Consumer as _;
 use ringbuf::traits::Producer as _;
 use ringbuf::traits::Split as _;
 
-create_two_threads_with_chunks_benchmark!(
+create_chunks_benchmark!(
     "1-gil",
     |capacity| gil::spsc::channel(NonZeroUsize::new(capacity).unwrap()),
     |p, s| {

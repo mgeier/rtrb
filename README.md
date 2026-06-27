@@ -37,9 +37,12 @@ Performance
 
 Measuring the performance of a data structure for inter-thread communication
 can be quite brittle and the results depend on many factors.
-A few performance comparisons between competing crates are shown in
-[issue #39](https://github.com/mgeier/rtrb/issues/39),
-but like all benchmarks, they are deeply flawed and to be taken with a grain of salt.
+A few benchmarks for performance comparisons between competing crates
+are available at the sub-directory
+[`performance-comparison/`](https://github.com/mgeier/rtrb/tree/main/performance-comparison)
+and some results thereof are shown in
+[issue #39](https://github.com/mgeier/rtrb/issues/39).
+Like all benchmarks, they are deeply flawed and to be taken with a grain of salt.
 You should make your own measurements that are relevant to your usage patterns.
 Feel free to share your own results by commenting on that issue.
 

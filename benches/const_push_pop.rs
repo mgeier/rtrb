@@ -1,4 +1,4 @@
-macro_rules! create_two_threads_const_benchmark {
+macro_rules! create_const_push_pop_benchmark {
     ($($id:literal, $create:tt, $push:expr, $pop:expr,::)+) => {
 
 use std::hint::black_box;
@@ -109,7 +109,7 @@ criterion_main!(benches);
     };
 }
 
-create_two_threads_const_benchmark! {
+create_const_push_pop_benchmark! {
     "rtrb",
     { ($N:expr) => {
         rtrb::RingBuffer::new($N)

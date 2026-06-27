@@ -1,10 +1,10 @@
-#[path = "../../benches/two_threads_const.rs"]
+#[path = "../../benches/const_push_pop.rs"]
 #[macro_use]
-mod two_threads_const;
+mod const_push_pop;
 
 use ringbuf::traits::*;
 
-create_two_threads_const_benchmark!(
+create_const_push_pop_benchmark!(
     "rtrb",
     { ($N:expr) => {
         rtrb::RingBuffer::new($N)
