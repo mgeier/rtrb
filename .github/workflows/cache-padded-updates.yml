@@ -2,6 +2,7 @@ name: Check for changes in cache_padded.rs
 on:
   schedule:
     - cron: "11 11 * * Mon"
+  workflow_dispatch:
 jobs:
   check-cache-padded:
     runs-on: ubuntu-latest
