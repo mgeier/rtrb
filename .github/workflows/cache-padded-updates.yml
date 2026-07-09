@@ -13,8 +13,8 @@ jobs:
       - name: Fetch newest stuff from crossbeam submodule
         working-directory: crossbeam
         run: |
-          git fetch origin master
+          git fetch origin main
       - name: Check for changes in cache_padded.rs
         working-directory: crossbeam
         run: |
-          git diff origin/master --exit-code -- crossbeam-utils/src/cache_padded.rs
+          git diff origin/main --exit-code -- crossbeam-utils/src/cache_padded.rs
