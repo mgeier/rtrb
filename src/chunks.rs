@@ -975,21 +975,42 @@ impl<T> ReadChunk<'_, T> {
     }
 
     unsafe fn commit_unchecked(self, n: usize) -> usize {
+        struct PanicGuard<'a, T> {
+            consumer: &'a Consumer<T>,
+            dropped: usize,
+        }
+
+        impl<T> Drop for PanicGuard<'_, T> {
+            fn drop(&mut self) {
+                let c = self.consumer;
+                // Mark dropped slots as read, even if their drop() panicked.
+                let head = c.buffer.increment(c.cached_head.get(), self.dropped);
+                c.buffer.head.store(head, Ordering::Release);
+                c.cached_head.set(head);
+            }
+        }
+
+        let mut guard = PanicGuard {
+            consumer: self.consumer,
+            dropped: 0,
+        };
+
         let first_len = self.first_len.min(n);
         for i in 0..first_len {
+            // Incrementing before drop attempt, because if it panics we should consider it dropped.
+            guard.dropped += 1;
             // SAFETY: The caller must make sure that there are n initialized elements.
             unsafe { self.first_ptr.add(i).drop_in_place() };
         }
         let second_len = self.second_len.min(n - first_len);
         for i in 0..second_len {
+            // Incrementing before drop attempt, because if it panics we should consider it dropped.
+            guard.dropped += 1;
             // SAFETY: The caller must make sure that there are n initialized elements.
             unsafe { self.second_ptr.add(i).drop_in_place() };
         }
-        let c = self.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), n);
-        c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
-        n
+        guard.dropped
+        // `head` is incremented when `guard` goes out of scope.
     }
 
     /// Returns the number of slots in the chunk.
