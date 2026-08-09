@@ -154,6 +154,30 @@ fn drop_write_chunk() {
 }
 
 #[test]
+fn read_chunk_with_panic_in_drop() {
+    struct PanicWhenDropping2(i32);
+    impl Drop for PanicWhenDropping2 {
+        fn drop(&mut self) {
+            if self.0 == 2 {
+                panic!("This should be caught");
+            }
+        }
+    }
+
+    let (mut p, mut c) = RingBuffer::new(3);
+    p.push(PanicWhenDropping2(1)).unwrap();
+    p.push(PanicWhenDropping2(2)).unwrap();
+    p.push(PanicWhenDropping2(3)).unwrap();
+    let chunk = c.read_chunk(3).unwrap();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        chunk.commit_all();
+    }))
+    .is_err());
+    // Element 1 has been dropped, element 2 has panicked, element 3 should still be there.
+    assert_eq!(c.pop().unwrap().0, 3);
+}
+
+#[test]
 fn trait_impls() {
     let (mut p, mut c) = RingBuffer::<u8>::new(0);
 
