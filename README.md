@@ -16,11 +16,8 @@ but the [alloc](https://doc.rust-lang.org/alloc/) crate is needed nevertheless.
 Usage
 -----
 
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-rtrb = "0.3"
+```sh
+cargo add rtrb
 ```
 
 
