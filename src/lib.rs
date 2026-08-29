@@ -76,7 +76,13 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 #[allow(dead_code, clippy::undocumented_unsafe_blocks)]
+#[cfg(not(doctest))]
 mod cache_padded;
+/// Dummy module to avoid failing cache_padded doctests.
+#[cfg(doctest)]
+mod cache_padded {
+    pub struct CachePadded;
+}
 use cache_padded::CachePadded;
 
 const IS_ABANDONED: u8 = 0b10000000;
