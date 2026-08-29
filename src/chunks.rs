@@ -565,16 +565,14 @@ impl<T: Copy> Consumer<T> {
 /// which also allows moving items from an iterator into the ring buffer
 /// by means of [`WriteChunkUninit::fill_from_iter()`].
 #[derive(Debug, PartialEq, Eq)]
-pub struct WriteChunk<'a, T>(Option<WriteChunkUninit<'a, T>>, PhantomData<T>);
+pub struct WriteChunk<'a, T>(WriteChunkUninit<'a, T>, PhantomData<T>);
 
 impl<T> Drop for WriteChunk<'_, T> {
     fn drop(&mut self) {
-        // NB: If `commit()` or `commit_all()` has been called, `self.0` is `None`.
-        if let Some(mut chunk) = self.0.take() {
-            // No part of the chunk has been committed, all slots are dropped.
-            // SAFETY: All slots have been initialized in From::from().
-            unsafe { chunk.drop_suffix(0) };
-        }
+        // NB: This is only called if `commit()`/`commit_all()` were *not* called!
+        // Therefore, no part of the chunk has been committed and all slots have to be dropped.
+        // SAFETY: All slots have been initialized in From::from().
+        unsafe { self.0.drop_suffix(0) };
     }
 }
 
@@ -592,11 +590,11 @@ where
             // SAFETY: i is in a valid range.
             unsafe { chunk.second_ptr.add(i).write(Default::default()) };
         }
-        WriteChunk(Some(chunk), PhantomData)
+        WriteChunk(chunk, PhantomData)
     }
 }
 
-impl<T> WriteChunk<'_, T>
+impl<'a, T> WriteChunk<'a, T>
 where
     T: Default,
 {
@@ -615,8 +613,7 @@ where
     /// they will *not* become available for reading and
     /// they will eventually be dropped (if `T` implements [`Drop`]).
     pub fn as_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.as_ref().unwrap();
+        let chunk = &self.0;
         // SAFETY: The pointers and lengths have been computed correctly in write_chunk_uninit()
         // and all slots have been initialized in From::from().
         unsafe {
@@ -635,9 +632,9 @@ where
     ///
     /// Panics in debug mode if `n` is greater than the number of slots in the chunk.
     /// In release mode, `n` is capped to the number of slots and no panic happens.
-    pub fn commit(mut self, n: usize) {
-        // self.0 is always Some(chunk).
-        let mut chunk = self.0.take().unwrap();
+    pub fn commit(self, n: usize) {
+        // NB: The `Drop` impl of `self` is *not* run here.
+        let mut chunk = self.into_inner();
         // SAFETY: All slots have been initialized in From::from().
         unsafe {
             // Slots at index `n` and higher are dropped ...
@@ -645,30 +642,34 @@ where
             // ... everything below `n` is committed.
             chunk.commit(n);
         }
-        // `self` is dropped here, with `self.0` being set to `None`.
     }
 
     /// Makes the whole chunk available for reading.
-    pub fn commit_all(mut self) {
-        // self.0 is always Some(chunk).
-        let chunk = self.0.take().unwrap();
+    pub fn commit_all(self) {
+        // NB: The `Drop` impl of `self` is *not* run here.
+        let chunk = self.into_inner();
         // SAFETY: All slots have been initialized in From::from().
         unsafe { chunk.commit_all() };
-        // `self` is dropped here, with `self.0` being set to `None`.
     }
 
     /// Returns the number of slots in the chunk.
     #[must_use]
     pub fn len(&self) -> usize {
-        // self.0 is always Some(chunk).
-        self.0.as_ref().unwrap().len()
+        self.0.len()
     }
 
     /// Returns `true` if the chunk contains no slots.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        // self.0 is always Some(chunk).
-        self.0.as_ref().unwrap().is_empty()
+        self.0.is_empty()
+    }
+
+    fn into_inner(self) -> WriteChunkUninit<'a, T> {
+        let this = core::mem::ManuallyDrop::new(self);
+        // SAFETY: We consumed `self`, so nobody else has a reference.
+        // We made sure that it will not be used again and not be dropped,
+        // so we can move its inner value out.
+        unsafe { core::ptr::read(&this.0) }
     }
 }
 
