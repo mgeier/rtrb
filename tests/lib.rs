@@ -43,6 +43,28 @@ fn zero_sized_type() {
 }
 
 #[test]
+fn zero_sized_type_and_enormous_capacity() {
+    struct ZeroSized;
+    assert_eq!(std::mem::size_of::<ZeroSized>(), 0);
+
+    let (mut p, mut c) = RingBuffer::new(usize::MAX / 2);
+    assert_eq!(p.buffer().capacity(), usize::MAX / 2);
+    assert_eq!(p.slots(), usize::MAX / 2);
+    assert_eq!(c.slots(), 0);
+    assert!(p.push(ZeroSized).is_ok());
+    assert_eq!(c.slots(), 1);
+    assert_eq!(p.slots(), (usize::MAX / 2) - 1);
+    assert!(c.pop().is_ok());
+    assert!(c.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "capacity exceeds usize::MAX / 2")]
+fn zero_sized_type_and_excessive_capacity() {
+    let _ = RingBuffer::<()>::new(1 + usize::MAX / 2);
+}
+
+#[test]
 fn parallel() {
     const COUNT: usize = if cfg!(miri) { 1_000 } else { 100_000 };
     let (mut p, mut c) = RingBuffer::new(3);
