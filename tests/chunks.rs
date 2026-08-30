@@ -200,7 +200,7 @@ fn trait_impls() {
     }
     let e = c.read_chunk(100).unwrap_err();
     assert_eq!(format!("{:?}", e), "TooFewSlots(0)");
-    assert_eq!(e.to_string(), "only 0 slots available in ring buffer");
+    assert_eq!(e.to_string(), "too few slots available in ring buffer");
 }
 
 #[test]

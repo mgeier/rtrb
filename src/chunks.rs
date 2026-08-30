@@ -1189,9 +1189,7 @@ impl std::error::Error for ChunkError {}
 impl fmt::Display for ChunkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ChunkError::TooFewSlots(n) => {
-                alloc::format!("only {} slots available in ring buffer", n).fmt(f)
-            }
+            ChunkError::TooFewSlots(_) => "too few slots available in ring buffer".fmt(f),
         }
     }
 }
