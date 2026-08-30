@@ -123,6 +123,11 @@ jobs:
         # For now, this is only run on one test, see https://github.com/mgeier/rtrb/issues/114
         run: |
           cargo miri test no_race_with_is_abandoned
+      - name: Run Miri yet again (this time with tree borrows)
+        env:
+          MIRIFLAGS: "-Zmiri-tree-borrows"
+        run: |
+          cargo miri test
 
   thread-sanitizer:
     runs-on: ubuntu-latest
