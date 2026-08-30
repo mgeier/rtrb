@@ -123,6 +123,11 @@ pub struct RingBuffer<T> {
 impl<T> RingBuffer<T> {
     /// Creates a `RingBuffer` with the given `capacity` and returns [`Producer`] and [`Consumer`].
     ///
+    /// # Panics
+    ///
+    /// Panics if `capacity * size_of::<T>()` exceeds `isize::MAX` bytes or,
+    /// when `T` is a zero-sized type, if `capacity` is larger than `usize::MAX / 2`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -143,6 +148,10 @@ impl<T> RingBuffer<T> {
     #[allow(clippy::new_ret_no_self)]
     #[must_use]
     pub fn new(capacity: usize) -> (Producer<T>, Consumer<T>) {
+        assert!(
+            capacity.checked_mul(2).is_some(),
+            "capacity exceeds usize::MAX / 2"
+        );
         ArcRingBuffer::new(Box::new(Self {
             head: CachePadded::new(AtomicUsize::new(0)),
             tail: CachePadded::new(AtomicUsize::new(0)),
