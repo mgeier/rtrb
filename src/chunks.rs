@@ -1132,6 +1132,32 @@ impl<T> Iterator for ReadChunkIntoIter<'_, T> {
         let remaining = self.chunk.first_len + self.chunk.second_len - self.iterated;
         (remaining, Some(remaining))
     }
+
+    #[inline]
+    fn fold<B, F>(mut self, mut init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        // Visit each physical segment separately so the segment selection in
+        // next() can be optimized out of the inner loops.
+        for _ in self.iterated..self.chunk.first_len {
+            init = f(init, self.next().unwrap());
+        }
+        for _ in self.iterated..self.chunk.len() {
+            init = f(init, self.next().unwrap());
+        }
+        init
+    }
+
+    #[inline]
+    fn count(mut self) -> usize {
+        // A single loop is easier to eliminate when dropping T has no effect.
+        let mut count = 0;
+        while self.next().is_some() {
+            count += 1;
+        }
+        count
+    }
 }
 
 impl<T> ExactSizeIterator for ReadChunkIntoIter<'_, T> {}
