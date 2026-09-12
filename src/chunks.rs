@@ -1138,8 +1138,9 @@ impl<T> Iterator for ReadChunkIntoIter<'_, T> {
     where
         F: FnMut(B, Self::Item) -> B,
     {
-        // Visit each physical segment separately so the segment selection in
-        // next() can be optimized out of the inner loops.
+        // The default fold() uses one loop over next(). Splitting it by segment
+        // helps the compiler eliminate segment checks and vectorize reductions,
+        // while still obtaining each element through next().
         for _ in self.iterated..self.chunk.first_len {
             init = f(init, self.next().unwrap());
         }
@@ -1151,7 +1152,9 @@ impl<T> Iterator for ReadChunkIntoIter<'_, T> {
 
     #[inline]
     fn count(mut self) -> usize {
-        // A single loop is easier to eliminate when dropping T has no effect.
+        // The default count() calls our split-loop fold(). Keep a single loop
+        // here so the compiler can more easily eliminate traversal when
+        // dropping T has no effect.
         let mut count = 0;
         while self.next().is_some() {
             count += 1;
