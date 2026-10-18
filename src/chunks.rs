@@ -1035,8 +1035,17 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
     /// When the iterator is dropped, all iterated slots are made available for writing again.
     /// Non-iterated items remain in the ring buffer.
     fn into_iter(self) -> Self::IntoIter {
+        let c = self.consumer;
+        let initial_head = c.cached_head.get();
+        // We set the cached index to the "worst case", i.e. all items are marked as consumed.
+        // If `ReadChunkIntoIter::drop()` is not called, this avoids double-dropping items
+        // at the cost of leaking any non-iterated items.
+        // If `drop()` is called, the index will be updated with the actually consumed items.
+        c.cached_head
+            .set(c.buffer.increment(initial_head, self.len()));
         Self::IntoIter {
             chunk: self,
+            initial_head,
             iterated: 0,
         }
     }
@@ -1049,9 +1058,12 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 ///
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
+/// If this `struct` is *not* dropped for some reason (e.g. via [`std::mem::forget()`]),
+/// all non-iterated items are leaked.
 #[derive(Debug)]
 pub struct ReadChunkIntoIter<'a, T> {
     chunk: ReadChunk<'a, T>,
+    initial_head: usize,
     iterated: usize,
 }
 
@@ -1091,8 +1103,10 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
-        let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
+        let c = self.chunk.consumer;
+        // `cached_head` has been set to the maximum when creating the iterator,
+        // here we set the actual value.
+        let head = c.buffer.increment(self.initial_head, self.iterated);
         c.buffer.head.store(head, Ordering::Release);
         c.cached_head.set(head);
     }
