@@ -533,7 +533,7 @@ pub struct Consumer<T> {
 
     /// A copy of `buffer.head` for quick access.
     ///
-    /// This value is always in sync with `buffer.head`.
+    /// This value is always in sync with `buffer.head`, except while a `ReadChunkIntoIter` exists.
     // NB: Caching the head seems to have little effect on Intel CPUs, but it seems to
     //     improve performance on AMD CPUs, see https://github.com/mgeier/rtrb/pull/132
     cached_head: Cell<usize>,
@@ -542,6 +542,17 @@ pub struct Consumer<T> {
     ///
     /// This value can be stale and sometimes needs to be resynchronized with `buffer.tail`.
     cached_tail: Cell<usize>,
+}
+
+impl<T> Drop for Consumer<T> {
+    fn drop(&mut self) {
+        // If a `ReadChunkIntoIter` has been forgotten and `head` has not been updated since,
+        // `cached_head` will be ahead and `head` has to be updated
+        // before dropping items in `RingBuffer::drop()`:
+        self.buffer
+            .head
+            .store(self.cached_head.get(), Ordering::Release);
+    }
 }
 
 // SAFETY: After moving a Consumer to another thread, there is still only a single thread
