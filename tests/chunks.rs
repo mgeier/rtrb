@@ -236,3 +236,15 @@ fn push_pop_partial_slice() {
     assert_eq!(unused.len(), 0);
     assert_eq!(popped, &[1, 2, 3]);
 }
+
+#[test]
+fn read_chunk_iterator_should_consume_even_if_forgotten() {
+    let (mut producer, mut consumer) = RingBuffer::new(8);
+    // We are using a Box to make it easier to detect a double free.
+    assert!(producer.push(Box::new(10)).is_ok());
+    let mut iter = consumer.read_chunk(1).unwrap().into_iter();
+    assert_eq!(*iter.next().unwrap(), 10);
+    std::mem::forget(iter);
+    // The iterator's drop() has not been called, but the item has still been consumed:
+    assert!(consumer.pop().is_err());
+}
