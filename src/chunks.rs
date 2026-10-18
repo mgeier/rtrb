@@ -1055,6 +1055,9 @@ impl<'a, T> IntoIterator for ReadChunk<'a, T> {
 ///
 /// When this `struct` is dropped, the iterated slots are made available for writing again.
 /// Non-iterated items remain in the ring buffer.
+/// If this `struct` is *not* dropped for some reason (e.g. via [`std::mem::forget()`]),
+/// the iterated slots are still made available for writing eventually
+/// (after certain [`Consumer`] operations).
 #[derive(Debug)]
 pub struct ReadChunkIntoIter<'a, T> {
     chunk: ReadChunk<'a, T>,
@@ -1097,10 +1100,10 @@ impl<T> Drop for ReadChunkIntoIter<'_, T> {
     ///
     /// Non-iterated items remain in the ring buffer and are *not* dropped.
     fn drop(&mut self) {
-        let c = &self.chunk.consumer;
-        let head = c.buffer.increment(c.cached_head.get(), self.iterated);
-        c.buffer.head.store(head, Ordering::Release);
-        c.cached_head.set(head);
+        let c = self.chunk.consumer;
+        // `cached_head` has been incremented in each `next()` call,
+        // here we update its atomic counterpart:
+        c.buffer.head.store(c.cached_head.get(), Ordering::Release);
     }
 }
 
@@ -1123,6 +1126,17 @@ impl<T> Iterator for ReadChunkIntoIter<'_, T> {
             return None;
         };
         self.iterated += 1;
+
+        let c = self.chunk.consumer;
+        // NB: We cannot fully defer updating the read index to `drop()`,
+        // because it is not guaranteed to be called at all,
+        // and not updating `head` would lead to a double free!
+        // However, we only increment the cached value in order to avoid an atomic access here.
+        // The atomic variable is updated in `ReadChunkIntoIter::drop()`, or if that's not called,
+        // in certain `Consumer` methods that are called afterwards,
+        // or eventually in `Consumer::drop()`.
+        c.cached_head.set(c.buffer.increment1(c.cached_head.get()));
+
         // SAFETY: ptr points to an initialized slot.
         Some(unsafe { ptr.read() })
     }
