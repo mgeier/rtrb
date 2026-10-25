@@ -1,9 +1,12 @@
+#![allow(clippy::incompatible_msrv)]
+
+pub(crate) mod common;
+
 macro_rules! create_push_pop_benchmark {
     ($($id:literal, $create:expr, $push:expr, $pop:expr,::)+) => {
 
 use std::convert::TryInto as _;
 use std::hint::black_box;
-use std::sync::Barrier;
 
 use criterion::{BenchmarkId, criterion_group, criterion_main};
 
@@ -44,76 +47,17 @@ $(
             for i in 0..iters {
                 push(&mut p, i as u8);
             }
-            let barrier = Barrier::new(3);
-            #[allow(clippy::incompatible_msrv)] // stable since 1.63
-            std::thread::scope(|s| {
-                let push_thread = s.spawn(|| {
-                    barrier.wait();
-                    let start_pushing = std::time::Instant::now();
-                    for i in 0..iters {
-                        // NB: This conversion truncates:
-                        push(&mut p, i as u8);
-                    }
-                    let stop_pushing = std::time::Instant::now();
-                    (start_pushing, stop_pushing)
-                });
-
-                let _trigger_thread = s.spawn(|| {
-                    // Try to force other threads to go to sleep on barrier.
-                    std::thread::yield_now();
-                    std::thread::yield_now();
-                    std::thread::yield_now();
-                    barrier.wait();
-                    // Hopefully, the other two threads now wake up at the same time.
-                });
-
-                barrier.wait();
-                let start_popping = std::time::Instant::now();
-                for _ in 0..iters {
-                    #[allow(clippy::incompatible_msrv)]
+            common::measure_concurrently(
+                iters,
+                move |i| {
+                    black_box(push(&mut p, black_box(i as u8)));
+                    1
+                },
+                |_| {
                     black_box(pop(&mut c));
-                }
-                let stop_popping = std::time::Instant::now();
-                let (start_pushing, stop_pushing) = push_thread.join().unwrap();
-                let total = stop_pushing
-                    .max(stop_popping)
-                    .duration_since(start_pushing.min(start_popping));
-
-                /*
-                if start_pushing < start_popping {
-                    println!(
-                        "popping started {:?} after pushing",
-                        start_popping.duration_since(start_pushing)
-                    );
-                } else {
-                    println!(
-                        "pushing started {:?} after popping",
-                        start_pushing.duration_since(start_popping)
-                    );
-                }
-                */
-
-                // The goal is that both threads are finished at around the same time.
-                // This can be checked with the following output.
-                /*
-                if stop_pushing < stop_popping {
-                    let diff = stop_popping.duration_since(stop_pushing);
-                    println!(
-                        "popping stopped {diff:?} after pushing ({:.1}% of total time)",
-                        (diff.as_secs_f64() / total.as_secs_f64()) * 100.0
-                    );
-                } else {
-                    let diff = stop_pushing.duration_since(stop_popping);
-                    println!(
-                        "pushing stopped {diff:?} after popping ({:.1}% of total time)",
-                        (diff.as_secs_f64() / total.as_secs_f64()) * 100.0
-                    );
-                }
-                */
-
-                #[allow(clippy::let_and_return)]
-                total
-            })
+                    1
+                },
+            )
         });
     });
 )+
@@ -135,7 +79,6 @@ $(
                     let start = std::time::Instant::now();
                     for i in 0..iters {
                         while !push(&mut p, i as u8) {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         }
                     }
@@ -149,7 +92,6 @@ $(
                         assert_eq!(x, i as u8);
                         break;
                     }
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     std::hint::spin_loop();
                 }
             }
@@ -178,16 +120,12 @@ $(
                 let echo_thread = std::thread::spawn(move || {
                     for _ in 0..iters {
                         let x = loop {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             if let Some(x) = black_box(pop(&mut c0)) {
                                 break x;
                             }
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         };
-                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
                         while !push(&mut p1, black_box(x)) {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         }
                     }
@@ -206,12 +144,10 @@ $(
                 let mut expected_i = 0;
                 while expected_i < iters {
                     // eagerly push as many items as possible ...
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     while push(&mut p0, black_box(sent_i as u8)) {
                         sent_i += 1;
                     }
                     // ... then try to pop a single item:
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     if let Some(x) = black_box(pop(&mut c1)) {
                         assert_eq!(x, expected_i as u8);
                         expected_i += 1;
@@ -241,16 +177,12 @@ $(
                 let echo_thread = std::thread::spawn(move || {
                     for _ in 0..iters {
                         let x = loop {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             if let Some(x) = black_box(pop(&mut c0)) {
                                 break x;
                             }
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         };
-                        #[allow(clippy::incompatible_msrv)] // stable since 1.49
                         while !push(&mut p1, black_box(x)) {
-                            #[allow(clippy::incompatible_msrv)] // stable since 1.49
                             std::hint::spin_loop();
                         }
                     }
@@ -262,13 +194,11 @@ $(
                 let mut expected_i = 0;
                 while expected_i < iters {
                     // eagerly pop as many items as possible ...
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     while let Some(x) = black_box(pop(&mut c1)) {
                         assert_eq!(x, expected_i as u8);
                         expected_i += 1;
                     }
                     // ... then try to push a single item:
-                    #[allow(clippy::incompatible_msrv)] // stable since 1.49
                     if push(&mut p0, black_box(sent_i as u8)) {
                         sent_i += 1;
                     }

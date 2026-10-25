@@ -64,6 +64,14 @@ results will be available in `target/criterion/report/index.html`):
 
     cargo bench
 
+The benchmark results of course depend on which CPUs they run on.
+Some systems have "performance" and "efficiency" cores,
+some cores might share the L3 cache, others might not.
+On Linux, the CPU architecture can be shown with `lscpu -e`
+and cores can be selected for benchmarking with `taskset`, e.g.
+
+    taskset -c 2,3 cargo bench
+
 Creating [flame graphs](https://github.com/flamegraph-rs/flamegraph) for the benchmarks;
 first a few preparations:
 
@@ -72,10 +80,10 @@ first a few preparations:
     export CARGO_PROFILE_BENCH_DEBUG=true
 
 Then, creating the flame graph (which will be saved to `flamegraph.svg`),
-providing a benchmark (e.g. `two_threads`), a desired runtime and optionally
+providing a benchmark (e.g. `push_pop`), a desired runtime and optionally
 a benchmark function (e.g. `large`):
 
-    cargo flamegraph --bench two_threads -- --bench --profile-time 10 large
+    cargo flamegraph --bench push_pop -- --bench --profile-time 10 large
 
 To measure code coverage (including branch coverage), nightly Rust is required,
 as well as [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov):

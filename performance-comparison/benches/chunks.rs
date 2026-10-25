@@ -2,6 +2,8 @@
 #[macro_use]
 mod chunks;
 
+use chunks::common;
+
 use core::num::NonZeroUsize;
 
 use gil::read_guard::BatchReader;

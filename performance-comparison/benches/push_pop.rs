@@ -2,6 +2,8 @@
 #[macro_use]
 mod push_pop;
 
+use push_pop::common;
+
 use core::num::NonZeroUsize;
 
 use ringbuf::traits::Consumer as _;
