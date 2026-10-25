@@ -96,20 +96,6 @@ pub fn measure_concurrently(
         (spawned_thread.join().unwrap(), current_result)
     });
 
-    // This shows whether both threads have been processing concurrently:
-    let (spawned_start, spawned_end, spawned_processed_items) = spawned_result;
-    let (current_start, current_end, current_processed_items) = current_result;
-    let total = spawned_end.max(current_end) - spawned_start.min(current_start);
-    let skew = |a: Instant, b: Instant| if a > b { a - b } else { b - a };
-    println!(
-        "iters: {iters}, spawned: {:.2}%, current: {:.2}%, \
-        start skew: {:.2}%, stop skew: {:.2}%",
-        spawned_processed_items as f64 / iters as f64 * 100.0,
-        current_processed_items as f64 / iters as f64 * 100.0,
-        skew(spawned_start, current_start).as_secs_f64() / total.as_secs_f64() * 100.0,
-        skew(spawned_end, current_end).as_secs_f64() / total.as_secs_f64() * 100.0,
-    );
-
     let extrapolated_time = |(start, end, processed): (Instant, Instant, u64)| {
         if processed == 0 {
             // This can only happen with a very small number of iterations,
