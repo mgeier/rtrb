@@ -16,7 +16,7 @@ gil = "0.9"
 heapless = "0.9"
 nexus-queue = "1.0"
 omango = "0.2"
-ringbuf = "0.5"
+ringbuf = "0.6"
 ringbuffer-spsc = "0.2"
 rtrb = { path = ".." }
 
